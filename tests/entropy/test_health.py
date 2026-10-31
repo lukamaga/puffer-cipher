@@ -14,6 +14,7 @@ from puffer.entropy.health import (
     AdaptiveProportionTest,
     ChannelHealth,
     CheckResult,
+    FrozenFrameCheck,
     HealthConfig,
     HealthMonitor,
     RepetitionCountTest,
@@ -164,6 +165,38 @@ def test_batching_equals_one_shot(pairs, cuts):
         assert batched.failures == one_shot.failures
 
 
+def _rct_literal(x: np.ndarray, cutoff: int) -> int:
+    """SP 800-90B 4.4.1 sample by sample; one signal per run (the run's B reaching C)."""
+    failures, a, b = 0, None, 0
+    for s in x.tolist():
+        a, b = (a, b + 1) if s == a else (s, 1)
+        failures += b == cutoff
+    return failures
+
+
+def _apt_literal(x: np.ndarray, window: int, cutoff: int) -> int:
+    """SP 800-90B 4.4.2 window by window (a trailing partial window counts too)."""
+    failures = 0
+    for start in range(0, x.size, window):
+        w = x[start : start + window].tolist()
+        failures += any(k + 1 >= cutoff for k in np.cumsum([s == w[0] for s in w]) - 1)
+    return failures
+
+
+@settings(derandomize=True, max_examples=200, deadline=None)
+@given(
+    pairs=st.lists(st.tuples(st.integers(0, 3), st.integers(1, 25)), max_size=120),
+    cuts=st.lists(st.integers(0, 3000), max_size=10),
+)
+def test_continuous_tests_match_the_literal_sp800_90b_loops(pairs, cuts):
+    x = _runs(pairs)
+    pieces = np.split(x, sorted(c % (x.size + 1) for c in cuts))
+    rct = RepetitionCountTest(2.0)
+    apt = AdaptiveProportionTest(1.0, window=16, alpha_exp=4)
+    assert sum(rct.update(p) for p in pieces) == _rct_literal(x, rct.cutoff)
+    assert sum(apt.update(p) for p in pieces) == _apt_literal(x, 16, apt.cutoff)
+
+
 def test_batching_equals_one_shot_on_large_mixed_stream(rng):
     x = np.concatenate([uniform(rng, 5000), np.zeros(700, np.uint8), uniform(rng, 3000)] * 3)
     cuts = np.sort(rng.integers(0, x.size, size=40))
@@ -204,6 +237,67 @@ def test_channel_lifecycle_startup_ok_failed_cooldown_startup_ok(rng):
     assert ch.state is STARTUP
     ch.update(uniform(rng, 100), 6.2)
     assert ch.state is OK
+
+
+def _health_op(kind: str) -> st.SearchStrategy[tuple]:
+    if kind == "good":
+        return st.tuples(st.just(kind), st.integers(1, 100))
+    if kind == "stuck":
+        return st.tuples(st.just(kind), st.integers(11, 100))
+    if kind == "check":
+        return st.tuples(
+            st.just(kind),
+            st.sampled_from(["frozen_frame", "liveness"]),
+            st.sampled_from([OK, DEGRADED, FAILED]),
+        )
+    return st.tuples(st.just(kind))
+
+
+# Mostly healthy batches, so that credit is actually reached between failures.
+_OPS = st.sampled_from(["good"] * 6 + ["stuck", "check", "report"]).flatmap(_health_op)
+
+
+@settings(derandomize=True, max_examples=150, deadline=None)
+@given(
+    steps=st.lists(st.tuples(st.floats(0.0, 0.5), _OPS), min_size=10, max_size=60),
+    seed=st.integers(0, 2**32 - 1),
+)
+def test_credit_is_never_granted_while_failed_or_starting_up(steps, seed):
+    """Credit needs: no failing check, a full cooldown since the last bad event,
+    and a full start-up window of clean samples in *earlier* batches after it."""
+    gen = np.random.default_rng(seed)
+    cfg = HealthConfig(startup_samples=128, cooldown_s=1.0)
+    ch = ChannelHealth("fish", 2.0, cfg)
+    t, last_bad, clean = 0.0, -math.inf, 0
+    failing: set[str] = set()
+    for dt, op in steps:
+        t += dt
+        if op[0] == "check":
+            _, name, state = op
+            ch.apply(CheckResult(name, state, "x"), t)
+            if state is FAILED or name in failing:
+                last_bad, clean = t, 0
+            failing.discard(name)
+            if state is FAILED:
+                failing.add(name)
+        elif op[0] == "report":
+            ch.report(t)
+        else:
+            kind, n = op
+            x = uniform(gen, n) if kind == "good" else np.zeros(n, np.uint8)
+            if ch.update(x, t):
+                last_bad, clean = t, 0
+                assert ch.credit_multiplier == 0.0
+                continue
+            if ch.credit_multiplier > 0:
+                assert not failing
+                assert t >= last_bad + cfg.cooldown_s
+                assert clean >= cfg.startup_samples
+                assert ch.state in (OK, DEGRADED)
+            if t >= last_bad + cfg.cooldown_s:
+                clean += n
+        if ch.state in (STARTUP, FAILED):
+            assert ch.credit_multiplier == 0.0
 
 
 def test_failures_during_cooldown_restart_it():
@@ -277,6 +371,47 @@ def test_near_identical_frames_count_as_frozen(make_frame, rng):
         image[0, 0, 0] ^= i & 1  # one subsampled pixel flips: MAD ~ 1e-3
         monitor.observe_frame(make_frame(image, index=i))
     assert monitor.state("sensor") is FAILED
+
+
+@pytest.mark.parametrize("period", [2, 5, 600])
+def test_looped_video_counts_as_frozen(make_frame, rng, period):
+    """A bit-exact loop (``video:tank.mp4,loop=1``) never repeats the *previous* frame.
+
+    Each frame differs from its predecessor, so only remembering recent
+    frame digests reveals that the camera is showing stale frames again.
+    """
+    monitor = HealthMonitor()
+    loop = [uniform(rng, 24 * 32 * 3).reshape(24, 32, 3) for _ in range(period)]
+    for i in range(period + 14):  # one full pass, then 14 repeated frames
+        monitor.observe_frame(make_frame(loop[i % period], index=i))
+    assert monitor.state("sensor") is STARTUP
+    monitor.observe_frame(make_frame(loop[(period + 14) % period], index=period + 14))
+    reports = monitor.reports()
+    for channel in ("sensor", "fish"):
+        assert reports[channel].state is FAILED
+        assert reports[channel].checks["frozen_frame"] == "failed"
+
+
+def test_frozen_history_is_bounded(make_frame, rng):
+    loop = [uniform(rng, 8 * 8 * 3).reshape(8, 8, 3) for _ in range(5)]
+    check = FrozenFrameCheck(history=4)  # remembers fewer frames than the loop is long
+    results = [check.observe(make_frame(loop[i % 5], index=i)) for i in range(60)]
+    assert all(r.state is OK for r in results)
+    assert check.consecutive == 0
+    with pytest.raises(ValueError, match="frozen_history"):
+        HealthConfig(frozen_history=0)
+
+
+def test_duplicated_frames_are_tolerated(make_frame, rng):
+    """Drivers and pulldown duplicate frames (A A B B B C C ...): never 15 in a row."""
+    monitor = HealthMonitor()
+    index = 0
+    for _ in range(40):
+        image = uniform(rng, 24 * 32 * 3).reshape(24, 32, 3)
+        for _ in range(3):
+            monitor.observe_frame(make_frame(image, index=index))
+            index += 1
+    assert monitor.reports()["sensor"].checks["frozen_frame"] == "ok"
 
 
 def test_noisy_frames_are_not_frozen(make_frame, rng):

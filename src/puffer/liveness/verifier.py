@@ -64,6 +64,12 @@ means the ROI or the first full window is not available yet; anything else is
 ``FAILED``. After a long failure the ROI is re-learnt (the camera may have
 moved), but only if it came from calibration in the first place.
 
+The status returned by ``process`` is the verdict on *that* frame - callers
+credit its entropy on it - so it fails closed: a frame that is not checked
+(its timestamp does not advance) is never ``VERIFIED``, a picture that does
+not contain the LED region is ``FAILED`` and an exception leaves ``FAILED``
+behind.
+
 ``process`` must be called from one thread (the frame loop); ``status`` and
 :meth:`LivenessVerifier.proof` return immutable snapshots and may be read
 from any thread.
@@ -73,7 +79,7 @@ from __future__ import annotations
 
 import functools
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Final
 
 import numpy as np
@@ -335,6 +341,7 @@ class LivenessVerifier:
     def _forget_observations(self) -> None:
         """Drop everything learnt from frames except the ROI and the lag grid."""
         self._calib: CalibrationAccumulator | None = None
+        self._calib_shape: tuple[int, ...] | None = None  # image size the accumulator holds
         self._calibration_failed = False
         self._next_calibration_try = -math.inf
         self._history.clear()
@@ -349,11 +356,17 @@ class LivenessVerifier:
     def process(self, frame: Frame) -> LivenessStatus:
         """Ingest one frame and return the updated status.
 
-        Frames whose timestamp does not increase are ignored (the previous
-        status is returned): they carry no new timing information.
+        Frames whose timestamp is not finite or does not increase are ignored:
+        they carry no new timing information. Such a frame was not checked, so
+        a ``VERIFIED`` status is demoted to ``FAILED`` rather than handed on to
+        it (a clock that stands still or runs backwards means a frozen,
+        replayed or broken feed). If processing raises, the status is set to
+        ``FAILED`` before the exception propagates.
         """
         t = float(frame.timestamp)
         if not math.isfinite(t) or (self._last_t is not None and t <= self._last_t):
+            if self._status.state is LivenessState.VERIFIED:
+                self._status = replace(self._status, state=LivenessState.FAILED)
             return self._status
         self._last_t = t
         if self._mode is not None and frame.mode != self._mode:
@@ -367,6 +380,9 @@ class LivenessVerifier:
         except ExpiredSymbolError:
             # Timestamps older than the schedule remembers cannot show a fresh challenge.
             status = LivenessStatus(LivenessState.FAILED)
+        except BaseException:
+            self._status = LivenessStatus(LivenessState.FAILED)  # never keep a stale VERIFIED
+            raise
         self._status = status
         self._watch_for_recalibration(status, t)
         return status
@@ -398,13 +414,17 @@ class LivenessVerifier:
     # ----------------------------------------------------------- calibration
 
     def _calibrate(self, frame: Frame, t: float) -> LivenessStatus:
-        if self._calib is None:
+        shape = frame.image.shape[:2]
+        if self._calib is None or shape != self._calib_shape:
+            # A new accumulator also when the picture size changed (camera
+            # reconfigured, feed swapped): such frames cannot be mixed.
             # Keep a little more than one attempt's worth: with dropped or
             # jittered frames the window would otherwise never span exactly
             # ``calibration_s``; re-tries then slide over the latest frames.
             self._calib = CalibrationAccumulator(
                 cell=self.calibration_grid, keep_s=1.5 * self.calibration_s
             )
+            self._calib_shape = shape
         acc = self._calib
         acc.add(frame)
         waiting = LivenessStatus(
@@ -482,6 +502,14 @@ class LivenessVerifier:
         return self._lags
 
     def _observe(self, frame: Frame, t: float) -> LivenessStatus:
+        roi = self._detector.roi
+        assert roi is not None  # process() calibrates while there is none
+        x, y, w, h = roi
+        if x + w > frame.width or y + h > frame.height:
+            # The picture shrank (camera reconfigured or feed swapped): the LED
+            # region is not in it, which is the same as a hidden LED. After
+            # ``recalibrate_after_s`` a calibrated ROI is searched for again.
+            return LivenessStatus(LivenessState.FAILED)
         origin = self._origin if self._origin is not None else self._start_evaluation(t)
         obs = self._detector.observe(frame)
         self._history.append(t, obs.on, obs.confident)

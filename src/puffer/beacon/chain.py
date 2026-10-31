@@ -20,6 +20,7 @@ import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from puffer.beacon.pulse import BeaconFormatError, ErrorCode, Pulse, verify_pulse
 
@@ -84,6 +85,10 @@ def verify_file(path: str | os.PathLike[str], public_key: bytes | None = None) -
     the file is internally consistent - anyone can produce a self-consistent
     chain under their own key - so callers should say so to the user.
 
+    The file is parsed strictly: an object that repeats a key is refused,
+    because JSON parsers disagree on which copy wins, and the verdict must be
+    about the same bytes every reader sees.
+
     Raises:
         OSError: the file cannot be read.
         BeaconFormatError: the file is not a JSON list of well-formed pulses
@@ -91,8 +96,10 @@ def verify_file(path: str | os.PathLike[str], public_key: bytes | None = None) -
         ValueError: ``public_key`` is given but is not 32 bytes.
     """
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        data = json.loads(Path(path).read_text(encoding="utf-8"), object_pairs_hook=_unique_keys)
+    except (ValueError, RecursionError) as exc:
+        # ValueError covers JSONDecodeError, UnicodeDecodeError, duplicate keys
+        # and integers beyond Python's digit limit; RecursionError runaway nesting.
         raise BeaconFormatError(f"{os.fspath(path)}: not a valid JSON document: {exc}") from exc
     if not isinstance(data, list):
         raise BeaconFormatError(f"{os.fspath(path)}: expected a JSON list of pulses")
@@ -105,3 +112,13 @@ def verify_file(path: str | os.PathLike[str], public_key: bytes | None = None) -
     if not pulses:
         return ChainReport(checked=0)
     return verify_chain(pulses, public_key if public_key is not None else pulses[0].public_key)
+
+
+def _unique_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """``object_pairs_hook`` that refuses a JSON object naming the same key twice."""
+    obj: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in obj:
+            raise BeaconFormatError(f"duplicate JSON key {key!r}")
+        obj[key] = value
+    return obj

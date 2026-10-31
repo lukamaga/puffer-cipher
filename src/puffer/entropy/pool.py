@@ -202,8 +202,20 @@ class EntropyPool:
         timeout: float | None,
         channels: Iterable[str] = CAMERA_CHANNELS,
     ) -> bool:
-        """Block until ``channels`` hold at least ``bits`` of credit; False on timeout."""
-        names = tuple(channels)
+        """Block until ``channels`` hold at least ``bits`` of credit; False on timeout.
+
+        Raises:
+            ValueError: ``bits`` exceeds what the saturating ledger can ever
+                hold for ``channels`` (``capacity_bits`` each) or is NaN, so
+                the wait could never succeed.
+        """
+        names = tuple(dict.fromkeys(channels))
+        reachable = self.capacity_bits * len(names)
+        if not bits <= reachable:
+            raise ValueError(
+                f"{bits!r} bits can never be credited: {len(names)} channel(s) "
+                f"saturate at {reachable:g} bits"
+            )
         with self._changed:
             return self._changed.wait_for(lambda: self._sum_credit(names) >= bits, timeout)
 

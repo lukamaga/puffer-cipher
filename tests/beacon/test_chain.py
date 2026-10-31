@@ -151,3 +151,32 @@ def test_verify_file_names_the_malformed_position(tmp_path: Path, chain: list[Pu
     path.write_text(json.dumps(items), encoding="utf-8")
     with pytest.raises(BeaconFormatError, match="pulse #2"):
         verify_file(path)
+
+
+def test_verify_file_rejects_duplicate_keys(
+    tmp_path: Path, chain: list[Pulse], public_key: bytes
+) -> None:
+    """A key given twice means different things to different JSON parsers: refuse it.
+
+    Here a reader that keeps the first ``summary`` sees a forged claim, while
+    the signature covers the last one, which Python's ``json`` keeps.
+    """
+    genuine = json.dumps(chain[1].to_json())
+    forged = genuine.replace('"summary": ', '"summary": "{\\"fish_bits\\":999999}", "summary": ', 1)
+    assert forged != genuine
+    path = tmp_path / "duplicate.json"
+    path.write_text(f"[{json.dumps(chain[0].to_json())}, {forged}]", encoding="utf-8")
+    with pytest.raises(BeaconFormatError, match="duplicate JSON key 'summary'"):
+        verify_file(path, public_key)
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["[" + "1" * 5000 + "]", "[" * 100_000 + "]" * 100_000],
+    ids=["integer-beyond-the-digit-limit", "runaway-nesting"],
+)
+def test_verify_file_rejects_pathological_json(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "hostile.json"
+    path.write_text(content, encoding="utf-8")
+    with pytest.raises(BeaconFormatError, match="not a valid JSON"):
+        verify_file(path)

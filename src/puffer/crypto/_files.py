@@ -20,7 +20,9 @@ wrong with ``open(path, "w")``:
 Reading is equally strict: key files are small JSON objects, so the reader
 caps the size, rejects duplicate keys (two ``"key"`` members could be
 resolved differently by different parsers) and non-standard constants such
-as ``NaN``.
+as ``NaN`` - including ``Infinity`` spelled as an overflowing ``1e999`` - and
+reports every way a hostile file can break the parser (deep nesting,
+oversized integers) as :class:`FormatError`.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import json
+import math
 import os
 import stat
 import tempfile
@@ -142,6 +145,13 @@ def _reject_constant(name: str) -> NoReturn:
     raise FormatError(f"non-standard JSON constant {name}")
 
 
+def _finite_float(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):
+        raise FormatError(f"JSON number {text[:32]!r} overflows a float")
+    return value
+
+
 def read_json_object(path: StrPath, *, what: str) -> dict[str, Any]:
     """Read a small, strictly valid JSON object from ``path``.
 
@@ -149,7 +159,9 @@ def read_json_object(path: StrPath, *, what: str) -> dict[str, Any]:
 
     Raises:
         FormatError: oversized file, invalid UTF-8 or JSON, duplicate
-            members, ``NaN``/``Infinity``, or a top level that is not an object.
+            members, ``NaN``/``Infinity`` (also as an overflowing number),
+            nesting or integers too large to parse, or a top level that is
+            not an object.
         OSError: the file cannot be read.
     """
     with open(path, "rb") as handle:
@@ -161,8 +173,13 @@ def read_json_object(path: StrPath, *, what: str) -> dict[str, Any]:
             raw.decode("utf-8"),
             object_pairs_hook=_reject_duplicates,
             parse_constant=_reject_constant,
+            parse_float=_finite_float,
         )
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except FormatError:
+        raise
+    except (ValueError, RecursionError) as exc:
+        # ValueError: bad UTF-8, JSONDecodeError, int() digit limit;
+        # RecursionError: nesting deeper than the interpreter's stack.
         raise FormatError(f"{what} is not valid JSON: {exc}") from exc
     if not isinstance(doc, dict):
         raise FormatError(f"{what} must contain a JSON object")

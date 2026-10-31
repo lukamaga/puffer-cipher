@@ -31,10 +31,16 @@ with ``synchronous = FULL``, so nothing is ever pushed to the public that a
 power cut could take back. Every tick re-checks the invariant "the latest
 pulse's precommitment is matched by the stored pending reveal" and refuses
 to publish (:class:`BeaconStateError`) rather than paper over a broken
-state, e.g. a database restored from a backup older than its last pulse.
+state, e.g. a pulses table whose pending reveal was lost or swapped.
 Recovering from that is an explicit operator decision: start a new chain
 (new database), leaving the old chain visibly ended at an unrevealed
 precommitment.
+
+**Never restore a database backup.** A consistent snapshot taken after pulse
+*k* satisfies that invariant, so a service restarted on it would sign a
+second, different pulse *k+1* - a fork of the public chain that every
+verifier accepts. Nothing local can tell it from ordinary downtime; after
+losing a database, start a new chain.
 
 Timing
 ------

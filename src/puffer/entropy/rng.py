@@ -31,6 +31,26 @@ The purpose string is length-prefixed so different purposes can never
 produce colliding inputs, and binds each output to its use ("key",
 "nonce", "salt", "beacon") as domain separation.
 
+Public values (``consume=False``)
+    Nonces and salts are published next to the ciphertext: they must be
+    unique and unpredictable, never secret. Spending camera credit on them
+    would be pure loss - a draw resets *all* credit, so a key generated
+    right after a nonce would get almost no fish entropy. Public values
+    therefore use::
+
+        seed = BLAKE2b-256(key=K, person=b"puffer-public-v1",
+                           data = u32(len(purpose)) || purpose || u64(counter)
+                                  || pool.snapshot_digest())
+
+    ``K`` is still a fresh ``os.urandom(32)``, so public output keeps the
+    "never weaker than the OS" guarantee; the snapshot still mixes in
+    the pool (if the OS RNG were stuck, values keep changing with the
+    tank); the counter is shared with the consuming path, and the separate
+    personalisation means a public seed can never equal a secret one. The
+    snapshot is one-way and already the input of the public display stream,
+    so nothing that later keys depend on is revealed, and nothing is
+    consumed: the receipt reports zero camera credit.
+
 Requests larger than :data:`CHUNK_BYTES` are split into chunks with
 consecutive counter values (one seed per chunk): libsodium aborts the
 whole process (``sodium_misuse``) on oversized deterministic requests, and
@@ -56,7 +76,7 @@ from collections.abc import Callable
 
 import nacl.utils
 
-from puffer.entropy.pool import EntropyPool
+from puffer.entropy.pool import EntropyPool, PoolDraw
 from puffer.entropy.receipt import EntropyReceipt, ReceiptContext
 
 __all__ = ["CHUNK_BYTES", "SYSTEM_KEY_BYTES", "PufferRNG", "derive_seed"]
@@ -65,22 +85,48 @@ SYSTEM_KEY_BYTES = 32
 SEED_BYTES = 32
 CHUNK_BYTES = 1 << 20
 _SEED_PERSON = b"puffer-seed-v1"
+_PUBLIC_PERSON = b"puffer-public-v1"
+_NONCE_BYTES = 24  # crypto_aead_xchacha20poly1305_ietf_NPUBBYTES
+_SALT_BYTES = 16  # crypto_pwhash_SALTBYTES
 _DISPLAY_PERSON = b"puffer-display"
 _DISPLAY_BLOCK_BITS = 512
 _U32 = struct.Struct(">I")
 _U64 = struct.Struct(">Q")
 
 
-def derive_seed(system_key: bytes, purpose: bytes, counter: int, material: bytes) -> bytes:
-    """The 32-byte ChaCha20 seed for one output chunk (DESIGN.md section 4.4)."""
+def derive_seed(
+    system_key: bytes,
+    purpose: bytes,
+    counter: int,
+    material: bytes,
+    *,
+    person: bytes = _SEED_PERSON,
+) -> bytes:
+    """The 32-byte ChaCha20 seed for one output chunk (DESIGN.md section 4.4).
+
+    ``material`` is the pool draw's material for secret output; public
+    output passes the pool snapshot and ``person=b"puffer-public-v1"``.
+    """
     if len(system_key) != SYSTEM_KEY_BYTES:
         raise ValueError(f"system key must be {SYSTEM_KEY_BYTES} bytes")
-    h = hashlib.blake2b(digest_size=SEED_BYTES, key=system_key, person=_SEED_PERSON)
+    h = hashlib.blake2b(digest_size=SEED_BYTES, key=system_key, person=person)
     h.update(_U32.pack(len(purpose)))
     h.update(purpose)
     h.update(_U64.pack(counter))
     h.update(material)
     return h.digest()
+
+
+def _nothing_drawn(draw_index: int) -> PoolDraw:
+    """The (empty) pool draw behind a public output: no credit, no frames."""
+    return PoolDraw(
+        draw_index=draw_index,
+        material=b"",
+        channels=(),
+        credits={},
+        fish_credits={},
+        frames=None,
+    )
 
 
 class PufferRNG:
@@ -112,8 +158,18 @@ class PufferRNG:
         self._counter = 0
         self._display_counter = 0
 
-    def generate(self, n: int, purpose: str = "bytes") -> tuple[bytes, EntropyReceipt]:
-        """``n`` secret random bytes for ``purpose``, and the receipt describing them."""
+    def generate(
+        self, n: int, purpose: str = "bytes", *, consume: bool = True
+    ) -> tuple[bytes, EntropyReceipt]:
+        """``n`` random bytes for ``purpose``, and the receipt describing them.
+
+        ``consume=True`` (the default, for keys and anything secret) draws
+        the pool: its material goes into the seed and all camera credit is
+        consumed and reported. ``consume=False`` is for *public* values
+        (nonces, salts): the seed mixes the pool snapshot instead, no credit
+        is consumed and the receipt reports zero camera credit (see the
+        module docstring). Both are keyed with fresh OS randomness.
+        """
         n = operator.index(n)
         if n < 0:
             raise ValueError("n must be non-negative")
@@ -121,17 +177,23 @@ class PufferRNG:
         if len(purpose_bytes) > 0xFFFFFFFF:
             raise ValueError("purpose too long")
         n_chunks = max(1, math.ceil(n / CHUNK_BYTES))
-        with self._lock:
-            first = self._counter
-            self._counter += n_chunks
-        draw = self.pool.draw()
+        # The OS key comes first: if it fails, no camera credit is thrown away.
         key = self._system_random(SYSTEM_KEY_BYTES)
         if len(key) != SYSTEM_KEY_BYTES:
             raise RuntimeError("system_random returned the wrong number of bytes")
+        with self._lock:
+            first = self._counter
+            self._counter += n_chunks
+        if consume:
+            draw = self.pool.draw()
+            material, person = draw.material, _SEED_PERSON
+        else:
+            draw = _nothing_drawn(self.pool.draw_index)
+            material, person = self.pool.snapshot_digest(), _PUBLIC_PERSON
         out = b"".join(
             nacl.utils.randombytes_deterministic(
                 min(CHUNK_BYTES, n - i * CHUNK_BYTES),
-                derive_seed(key, purpose_bytes, first + i, draw.material),
+                derive_seed(key, purpose_bytes, first + i, material, person=person),
             )
             for i in range(n_chunks)
         )
@@ -152,9 +214,23 @@ class PufferRNG:
         """A 32-byte secret key and its receipt."""
         return self.generate(32, "key")
 
-    def nonce(self) -> bytes:
-        """A 24-byte XChaCha20 nonce (random nonces are safe at 192 bits)."""
-        return self.generate(24, "nonce")[0]
+    def nonce(self, n: int = _NONCE_BYTES) -> bytes:
+        """A 24-byte XChaCha20 nonce (random nonces are safe at 192 bits).
+
+        Public: OS-keyed, consumes no camera credit (``consume=False``).
+        ``n`` lets it serve as the ``random_bytes`` hook of
+        :func:`puffer.crypto.encrypt_message`.
+        """
+        return self.generate(n, "nonce", consume=False)[0]
+
+    def salt(self, n: int = _SALT_BYTES) -> bytes:
+        """``n`` bytes of public salt (default: an Argon2id salt).
+
+        OS-keyed, consumes no camera credit (``consume=False``). Matches the
+        ``RandomBytes`` signature, so ``random_bytes=rng.salt`` can be passed
+        to :func:`puffer.crypto.encrypt_file`.
+        """
+        return self.generate(n, "salt", consume=False)[0]
 
     def display_bits(self, n_bits: int) -> str:
         """``n_bits`` *public* bits as a ``'0'``/``'1'`` string, for display only.

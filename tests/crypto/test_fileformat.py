@@ -33,6 +33,7 @@ from puffer.crypto import (
     WrongKeyError,
     decrypt_stream,
     encrypt_stream,
+    fileformat,
     key_id,
     read_header,
 )
@@ -376,6 +377,26 @@ def test_crafted_kdf_cost_is_rejected_before_argon2(
     monkeypatch.setattr(argon2id, "kdf", forbidden)
     with pytest.raises(FormatError, match="outside the accepted range"):
         unseal(crafted, password=PASSWORD)
+
+
+def test_kdf_cost_caps_are_inclusive(password_blob: bytes, monkeypatch: pytest.MonkeyPatch) -> None:
+    """DESIGN 3.2: opslimit <= 16 and memlimit <= 1 GiB are readable; one more is not."""
+    assert (fileformat.MAX_OPSLIMIT, fileformat.MAX_MEMLIMIT) == (16, 1024**3)
+
+    def craft(opslimit: int, memlimit: int) -> bytes:
+        return password_blob[:20] + struct.pack(">QQ", opslimit, memlimit) + password_blob[36:]
+
+    header = read_header(io.BytesIO(craft(16, 1024**3)))
+    assert header.argon2 is not None
+    assert (header.argon2.opslimit, header.argon2.memlimit) == (16, 1024**3)
+
+    def forbidden(*args: Any, **kwargs: Any) -> bytes:
+        raise AssertionError("Argon2 must not run for a rejected header")
+
+    monkeypatch.setattr(argon2id, "kdf", forbidden)
+    for opslimit, memlimit in [(16, 1024**3 + 1), (17, 1024**3)]:
+        with pytest.raises(FormatError, match="outside the accepted range"):
+            unseal(craft(opslimit, memlimit), password=PASSWORD)
 
 
 @pytest.mark.parametrize("chunk_size", [0, 1, MIN_CHUNK_SIZE - 1, MAX_CHUNK_SIZE + 1, 2**32 - 1])

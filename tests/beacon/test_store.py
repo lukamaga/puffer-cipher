@@ -75,6 +75,17 @@ def test_queries(memory_store: BeaconStore, chain: list[Pulse]) -> None:
         memory_store.range(-1, 5)
 
 
+def test_lookups_beyond_the_index_range_find_nothing(
+    memory_store: BeaconStore, chain: list[Pulse]
+) -> None:
+    """Indices come from URLs; one that cannot exist is "not found", not a crash."""
+    _fill(memory_store, chain)
+    assert memory_store.get(2**53) is None
+    assert memory_store.get(2**64) is None
+    assert memory_store.range(2**64) == []
+    assert memory_store.range(0, 2**64) == chain
+
+
 def test_persistence_across_reopen(tmp_path: Path, chain: list[Pulse]) -> None:
     path = tmp_path / "beacon.db"
     with BeaconStore(path) as store:
@@ -93,6 +104,19 @@ def test_new_database_file_is_private(tmp_path: Path, chain: list[Pulse]) -> Non
     path = tmp_path / "beacon.db"
     with BeaconStore(path) as store:
         _fill(store, chain[:1])
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
+def test_existing_database_file_is_made_private(tmp_path: Path, chain: list[Pulse]) -> None:
+    """The pending reveal is secret, whoever created the file (DESIGN 9.1 shares ``puffer.db``)."""
+    path = tmp_path / "puffer.db"
+    with closing(sqlite3.connect(path)) as conn:  # e.g. another component opened it first
+        conn.execute("CREATE TABLE fish_daily (fish_id TEXT)")
+    path.chmod(0o644)
+    with BeaconStore(path) as store:
+        _fill(store, chain[:1])
+        assert store.get_pending() is not None
     assert path.stat().st_mode & 0o777 == 0o600
 
 

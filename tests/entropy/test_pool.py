@@ -191,3 +191,51 @@ def test_wait_for_credit_wakes_on_absorb():
     assert not pool.wait_for_credit(65.0, timeout=0.01)
     assert pool.wait_for_credit(64.0, timeout=0.0, channels=["sensor"])
     assert not pool.wait_for_credit(1.0, timeout=0.0, channels=["fish"])
+
+
+def test_wait_for_credit_rejects_targets_the_ledger_can_never_reach():
+    """Credit saturates per channel, so asking for more would block forever."""
+    pool = EntropyPool(capacity_bits=100)
+    pool.absorb(output("sensor"), 1000.0)
+    pool.absorb(output("fish"), 1000.0)
+    assert pool.wait_for_credit(200.0, timeout=None)  # both channels full: reachable
+    for impossible in (200.5, float("inf"), float("nan")):
+        with pytest.raises(ValueError, match="never"):
+            pool.wait_for_credit(impossible, timeout=None)
+    with pytest.raises(ValueError, match="never"):
+        pool.wait_for_credit(101.0, timeout=None, channels=["sensor", "sensor"])
+    assert pool.wait_for_credit(100.0, timeout=0.0, channels=["sensor", "sensor"])
+
+
+def test_concurrent_absorb_draw_and_snapshot_keep_attribution_consistent():
+    pool = EntropyPool(capacity_bits=1e12)
+    n_threads, n_absorbs = 6, 300
+    draws = []
+    stop = threading.Event()
+
+    def producer(k: int) -> None:
+        for i in range(n_absorbs):
+            owners = (f"f{k}", f"f{(k + 1) % n_threads}", None)
+            pool.absorb(output("fish", bytes([k, i % 256]), 3, owners, i), 3.0)
+
+    def consumer() -> None:
+        while not stop.is_set():
+            pool.snapshot_digest()
+            draws.append(pool.draw())
+
+    threads = [threading.Thread(target=producer, args=(k,)) for k in range(n_threads)]
+    drawer = threading.Thread(target=consumer)
+    drawer.start()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    stop.set()
+    drawer.join()
+    draws.append(pool.draw())
+    total = n_threads * n_absorbs * 3.0
+    assert sum(d.credits.get("fish", 0.0) for d in draws) == pytest.approx(total)
+    for d in draws:  # two of three samples have an owner in every absorb
+        fish_bits = d.credits.get("fish", 0.0)
+        assert sum(d.fish_credits.values()) == pytest.approx(fish_bits * 2 / 3)
+    assert [d.draw_index for d in draws] == list(range(len(draws)))

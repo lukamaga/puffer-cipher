@@ -51,6 +51,7 @@ from __future__ import annotations
 import hashlib
 import math
 import threading
+from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
@@ -282,12 +283,16 @@ class HealthConfig:
     fish_absence_s: float = 10.0
     min_bits_per_sample: float = 0.5
     source_timeout_s: float = 5.0
+    frozen_history: int = 2048
+    """Frames whose digests the frozen-frame check remembers (catches loops up to this length)."""
 
     def __post_init__(self) -> None:
         _check_h(self.sensor_h)
         _check_h(self.fish_h)
         if self.startup_samples < 0 or self.frozen_frames < 1 or self.min_fish < 0:
             raise ValueError("startup_samples, frozen_frames and min_fish must be non-negative")
+        if self.frozen_history < 1:
+            raise ValueError("frozen_history must be at least 1 frame")
         if self.expected_fish is not None and self.expected_fish < self.min_fish:
             raise ValueError("expected_fish must be >= min_fish")
         if not 0.0 <= self.degraded_multiplier <= 1.0:
@@ -315,45 +320,68 @@ class CheckResult:
 
 
 class FrozenFrameCheck:
-    """``frozen_frame``: the video stopped changing.
+    """``frozen_frame``: the video stopped changing, or is replaying itself.
 
-    Every real sensor has shot noise, so two consecutive raw frames are never
-    bit-identical and never differ by almost nothing. An exact repeat
-    (detected by a 128-bit frame digest, cheap and exact) or a mean absolute
-    difference below ``mad_threshold`` grey levels (measured on a 2x2
-    subsampled frame, plenty of pixels for this threshold) counts as frozen;
-    ``frames`` consecutive frozen frames fail the camera channels. A single
-    repeated frame is tolerated because some drivers and video files
-    legitimately duplicate frames.
+    Every real sensor has shot noise, so no two raw frames are ever
+    bit-identical, and consecutive frames never differ by almost nothing. A
+    frame whose 128-bit digest (shape included; cheap and exact) matches any
+    of the last ``history`` frames, or whose mean absolute difference from
+    the previous frame is below ``mad_threshold`` grey levels (measured on a
+    2x2 subsampled frame, plenty of pixels for this threshold), counts as
+    frozen; ``frames`` consecutive frozen frames fail the camera channels.
+    Remembering more than the previous frame is what catches a looping
+    video (``video:tank.mp4,loop=1``, a replayed clip, an alternating pair
+    of stills): each frame differs from its predecessor, but every frame of
+    the second pass repeats one already seen. Loops longer than ``history``
+    frames are left to the liveness check. A single repeated frame is
+    tolerated because some drivers and video files legitimately duplicate
+    frames.
     """
 
-    def __init__(self, mad_threshold: float = 0.05, frames: int = 15) -> None:
+    def __init__(self, mad_threshold: float = 0.05, frames: int = 15, history: int = 2048) -> None:
+        if history < 1:
+            raise ValueError("history must be at least 1 frame")
         self.mad_threshold = mad_threshold
         self.frames = frames
         self.consecutive = 0
-        self._prev_digest: bytes | None = None
+        self._recent: deque[bytes] = deque()
+        self._history = history
+        self._seen: dict[bytes, int] = {}  # digest -> occurrences in _recent
         self._prev_small: npt.NDArray[np.uint8] | None = None
 
     def observe(self, frame: Frame) -> CheckResult:
         image = np.ascontiguousarray(frame.image)
-        digest = hashlib.blake2b(image, digest_size=16, person=b"puffer-frozen").digest()
+        h = hashlib.blake2b(digest_size=16, person=b"puffer-frozen")
+        h.update(repr(image.shape).encode("ascii"))
+        h.update(image)
+        digest = h.digest()
         small = image[::2, ::2]
         prev = self._prev_small
-        if prev is None or prev.shape != small.shape:
-            frozen = False
-        elif digest == self._prev_digest:
+        if digest in self._seen:
             frozen = True
+        elif prev is None or prev.shape != small.shape:
+            frozen = False
         else:
             diff = np.abs(small.astype(np.int16) - prev.astype(np.int16))
             frozen = float(diff.mean()) < self.mad_threshold
         self.consecutive = self.consecutive + 1 if frozen else 0
-        self._prev_digest = digest
+        self._remember(digest)
         self._prev_small = small.copy()
         if self.consecutive >= self.frames:
             return CheckResult(
                 CHECK_FROZEN, HealthState.FAILED, f"frozen video: {self.consecutive} frames"
             )
         return CheckResult(CHECK_FROZEN, HealthState.OK)
+
+    def _remember(self, digest: bytes) -> None:
+        self._recent.append(digest)
+        self._seen[digest] = self._seen.get(digest, 0) + 1
+        if len(self._recent) > self._history:
+            old = self._recent.popleft()
+            if self._seen[old] == 1:
+                del self._seen[old]
+            else:
+                self._seen[old] -= 1
 
 
 class FishPresenceCheck:
@@ -626,7 +654,9 @@ class HealthMonitor:
         self._channels = {
             name: ChannelHealth(name, cfg.assessed_h(name), cfg) for name in CAMERA_CHANNELS
         }
-        self._frozen = FrozenFrameCheck(cfg.frozen_mad_threshold, cfg.frozen_frames)
+        self._frozen = FrozenFrameCheck(
+            cfg.frozen_mad_threshold, cfg.frozen_frames, cfg.frozen_history
+        )
         self._presence = FishPresenceCheck(cfg.min_fish, cfg.expected_fish, cfg.fish_absence_s)
         self._low_entropy = {
             name: LowEntropyCheck(cfg.min_bits_per_sample) for name in CAMERA_CHANNELS

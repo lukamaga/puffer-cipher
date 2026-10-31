@@ -258,6 +258,29 @@ def test_load_rejects_malformed_json(tmp_path: Path, content: str, message: str)
         load_key(path)
 
 
+@pytest.mark.parametrize(
+    ("receipt", "message"),
+    [
+        ("[" * 100_000 + "]" * 100_000, "not valid JSON"),  # nesting: RecursionError
+        ("1" * 5000, "not valid JSON"),  # beyond int()'s digit limit: plain ValueError
+        ("1e999", "overflows"),  # Infinity in disguise
+        ("-1e999", "overflows"),
+    ],
+    ids=["deep-nesting", "huge-int", "inf", "minus-inf"],
+)
+def test_load_rejects_pathological_json(
+    tmp_path: Path, key: bytes, receipt: str, message: str
+) -> None:
+    """Hostile but small key files must fail as FormatError, never as another exception."""
+    path = tmp_path / "evil.key"
+    save_key(path, key)
+    text = path.read_text().rstrip().removesuffix("}") + f', "receipt": {{"x": {receipt}}}}}'
+    path.write_text(text)
+    os.chmod(path, 0o600)
+    with pytest.raises(FormatError, match=message):
+        load_key(path)
+
+
 def test_load_rejects_duplicate_key_members(tmp_path: Path, key: bytes, other_key: bytes) -> None:
     """Two "key" members could be resolved differently by different JSON parsers."""
     path = tmp_path / "dup.key"

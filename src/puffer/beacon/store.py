@@ -23,10 +23,12 @@ lacks the value needed to honour it (see :mod:`puffer.beacon.service`).
 The database is server-private
 ------------------------------
 Until it is revealed, the pending ``local_random`` is a secret: whoever reads
-it knows the next pulse's ``local_random`` one period early. New database
-files are therefore created with mode ``0600`` (SQLite gives its journal the
-same permissions); never serve, back up to shared storage or copy this file
-to a public mirror. Public data is exposed only through :meth:`latest`,
+it knows the next pulse's ``local_random`` one period early. The database
+file is therefore created with mode ``0600``, and an existing file (which
+another component may have created first: DESIGN.md 9.1 keeps one
+``puffer.db``) loses any group and other permissions on open; SQLite gives its
+journal the same permissions. Never serve, back up to shared storage or copy
+this file to a public mirror. Public data is exposed only through :meth:`latest`,
 :meth:`get` and :meth:`range`. :class:`PendingReveal` keeps the secret out of
 its ``repr`` so it cannot leak into logs.
 
@@ -46,6 +48,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import stat
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -55,6 +58,7 @@ from typing import Final, Self
 
 from puffer.beacon.pulse import (
     LOCAL_RANDOM_BYTES,
+    MAX_JSON_INT,
     BeaconFormatError,
     ErrorCode,
     Pulse,
@@ -166,9 +170,8 @@ class BeaconStore:
 
     def __init__(self, path: str | os.PathLike[str] = MEMORY) -> None:
         location = os.fspath(path)
-        if location != MEMORY and not os.path.exists(location):
-            # Create the file ourselves so it is private from the first byte.
-            os.close(os.open(location, os.O_CREAT | os.O_WRONLY, 0o600))
+        if location != MEMORY:
+            _make_private(location)
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(location, isolation_level=None, check_same_thread=False)
         try:
@@ -245,6 +248,8 @@ class BeaconStore:
 
     def get(self, index: int) -> Pulse | None:
         """The pulse with ``index``, or ``None`` if it does not exist."""
+        if not 0 <= index <= MAX_JSON_INT:  # no pulse can have it (and SQLite would overflow)
+            return None
         with self._lock:
             row = self._conn.execute(
                 "SELECT pulse_index, pulse_json FROM pulses WHERE pulse_index = ?", (index,)
@@ -262,6 +267,9 @@ class BeaconStore:
         """
         if start < 0 or limit < 0:
             raise ValueError("start and limit must be non-negative")
+        if start > MAX_JSON_INT:  # beyond every possible index (and SQLite's INTEGER)
+            return []
+        limit = min(limit, MAX_JSON_INT)
         with self._lock:
             rows = self._conn.execute(
                 "SELECT pulse_index, pulse_json FROM pulses WHERE pulse_index >= ? "
@@ -349,6 +357,22 @@ class BeaconStore:
             "SELECT pulse_index, pulse_json FROM pulses ORDER BY pulse_index DESC LIMIT 1"
         ).fetchone()
         return None if row is None else _decode_pulse(row)
+
+
+def _make_private(location: str) -> None:
+    """Create ``location`` with mode ``0600``, or strip group/other access from an existing file.
+
+    Works on the open descriptor, so there is no window between checking and
+    changing the mode. Fails (``PermissionError``) rather than continue when
+    the file belongs to someone else and cannot be made private.
+    """
+    fd = os.open(location, os.O_CREAT | os.O_WRONLY, 0o600)
+    try:
+        mode = stat.S_IMODE(os.fstat(fd).st_mode)
+        if mode & 0o077:
+            os.fchmod(fd, mode & 0o700)
+    finally:
+        os.close(fd)
 
 
 def _encode_pulse(pulse: Pulse) -> str:

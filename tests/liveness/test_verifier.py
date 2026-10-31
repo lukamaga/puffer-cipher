@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import math
 import time
@@ -347,6 +348,99 @@ def test_non_increasing_timestamps_are_ignored():
     status = verifier.process(frames[10])
     assert verifier.process(frames[5]) is status
     assert verifier.process(frames[10]) is status
+
+
+def test_frames_that_cannot_be_checked_never_inherit_verified():
+    """The status is the verdict on *this* frame, and callers credit its entropy on it.
+
+    A frame whose timestamp does not advance is not checked against the
+    challenge, so returning the previous VERIFIED would let a feed replayed
+    with old timestamps (or a camera whose clock stopped) earn credit forever.
+    """
+    challenge = seeded_schedule(53)
+    frames = frames_for(challenge, 54, duration_s=20.0)
+    live, continuation = frames[:-30], frames[-30:]
+    verifier = LivenessVerifier(challenge)
+    assert run(verifier, live)[-1].state is VERIFIED
+
+    blank = [dataclasses.replace(f, image=np.zeros_like(f.image)) for f in live[-90:]]
+    stale = run(verifier, blank)  # black frames carrying already-seen timestamps
+    assert all(s.state is FAILED for s in stale)
+    assert verifier.status.state is FAILED
+    frozen_clock = dataclasses.replace(live[-1], timestamp=math.nan)
+    assert verifier.process(frozen_clock).state is FAILED
+
+    # the ignored frames taught the verifier nothing: the live feed carries on
+    assert all(s.state is VERIFIED for s in run(verifier, continuation))
+
+
+def test_an_error_while_processing_does_not_leave_a_stale_verdict(monkeypatch):
+    challenge = seeded_schedule(55)
+    frames = frames_for(challenge, 56, duration_s=19.0)
+    verifier = LivenessVerifier(challenge)
+    assert run(verifier, frames)[-1].state is VERIFIED
+
+    def broken(frame: Frame) -> None:
+        raise RuntimeError("camera driver returned garbage")
+
+    monkeypatch.setattr(verifier.detector, "observe", broken)
+    later = dataclasses.replace(frames[-1], timestamp=frames[-1].timestamp + 1 / 30)
+    with pytest.raises(RuntimeError, match="garbage"):
+        verifier.process(later)
+    assert verifier.status.state is FAILED
+
+
+def test_resolution_change_fails_closed_and_recalibrates():
+    """A smaller picture cannot contain the old LED region: FAILED at once, never an exception."""
+    challenge = seeded_schedule(57)
+    before = frames_for(challenge, 58, duration_s=20.0)
+    smaller = Scene(width=96, height=64, led_center=(30, 30), decoy_center=None, fish=False)
+    after_change = list(
+        render(
+            challenge.state_at,
+            rng=np.random.default_rng(59),
+            start_s=20.0,
+            duration_s=30.0,
+            scene=smaller,
+        )
+    )
+    verifier = LivenessVerifier(challenge, recalibrate_after_s=5.0)
+    statuses = run(verifier, before + after_change)
+    assert statuses[len(before) - 1].state is VERIFIED
+    assert statuses[len(before)].state is FAILED
+    assert statuses[-1].state is VERIFIED
+    x, y, w, h = verifier.roi or (0, 0, 0, 0)
+    assert abs(x + w / 2 - 30) <= 5
+    assert abs(y + h / 2 - 30) <= 5
+
+
+def test_configured_roi_outside_a_smaller_picture_fails_without_raising():
+    challenge = seeded_schedule(60)
+    frames = frames_for(challenge, 61, duration_s=16.0)
+    verifier = LivenessVerifier(challenge, Scene().led_roi)
+    assert run(verifier, frames)[-1].state is VERIFIED
+    small = dataclasses.replace(
+        frames[-1], timestamp=frames[-1].timestamp + 1 / 30, image=frames[-1].image[:16, :16]
+    )
+    assert verifier.process(small).state is FAILED
+    assert verifier.status.state is FAILED
+
+
+def test_resolution_change_during_calibration_restarts_it():
+    challenge = seeded_schedule(62)
+    first = frames_for(challenge, 63, duration_s=2.0)
+    bigger = Scene(width=160, height=120, led_center=(120, 30), decoy_center=None)
+    rest = list(
+        render(
+            challenge.state_at,
+            rng=np.random.default_rng(64),
+            start_s=2.0,
+            duration_s=20.0,
+            scene=bigger,
+        )
+    )
+    statuses = run(LivenessVerifier(challenge), first + rest)
+    assert statuses[-1].state is VERIFIED
 
 
 def test_processing_is_cheap_per_frame():
