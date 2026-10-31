@@ -231,7 +231,125 @@ Liveness proves freshness, not authenticity: an attacker who watches the LED in
 real time and composites it into a forged video would pass. The threat model
 below covers what that means.
 
-<!-- RESULTS -->
+## Results
+
+Every number below comes from the simulated aquarium (seed 1, 640x480,
+30 fps, 6 fish) and is reproducible with `puffer analyze`. The full report,
+with every estimator, sequence and p-value, is in
+[docs/results/RESULTS.md](docs/results/RESULTS.md).
+
+### Where the entropy comes from
+
+Each channel's raw samples were assessed with all ten estimators of NIST SP
+800-90B section 6.3. The engine credits at most half of the assessed
+min-entropy, and never more than 3 bits per fish sample.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/min-entropy-dark.png">
+  <img alt="SP 800-90B min-entropy per sample by estimator, sensor and fish, day and night" src="docs/media/min-entropy-light.png" width="100%">
+</picture>
+
+| | Sensor, day | Sensor, night | Fish, day | Fish, night |
+|---|---:|---:|---:|---:|
+| Min-entropy, SP 800-90B (bits per sample) | 1.73 | 2.40 | 6.11 | 3.58 |
+| Samples assessed | 1,000,000 | 1,000,000 | 47,997 | 15,705 |
+| Credited per sample (bits) | 0.85 | 1.16 | 1.50 | 1.50 |
+| Credited rate | 104 kbit/s | 143 kbit/s | 242 bit/s | 77 bit/s |
+
+The sensor estimate uses the full million samples the standard asks for. The
+fish channel produces about five samples per frame, so its estimate rests on
+fewer samples and should be read as indicative.
+
+### Day and night
+
+When the tank lights go off the camera switches to infrared. The fish sleep,
+fewer of them stay tracked, and their credit falls from 190 bit/s by day to
+58 bit/s late in the night. The sensor channel rises from 102 to 142 kbit/s
+because the infrared mode runs at a higher gain. Credit always follows the
+measurement, so the balance between channels adapts without configuration.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/day-night-cycle-dark.png">
+  <img alt="Credited bits per second over a day, night, day cycle" src="docs/media/day-night-cycle-light.png" width="100%">
+</picture>
+
+### Live tank versus replay
+
+The live run is recorded losslessly to an FFV1 file and fed back to a fresh
+engine. The verifier is even told where the LED is, the most favourable setup
+an attacker could ask for.
+
+| run | LED challenge | verified after | best confidence | camera credit |
+|---|---|---:|---:|---:|
+| Live tank | A | 12.9 s | 58.1 bits | 2,304,492 bits |
+| Replay of the live run | fresh, from `os.urandom` | never | 0.1 bits | 0 bits |
+| Control: same replay | A | 12.9 s | 58.1 bits | 2,304,968 bits |
+
+The control proves the replay fails because the challenge is fresh, not
+because of the codec or the detector.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/liveness-replay-dark.png">
+  <img alt="Liveness confidence over time: the live tank verifies, its replay never does" src="docs/media/liveness-replay-light.png" width="100%">
+</picture>
+
+### Statistical test suites
+
+| stream | OS randomness | NIST SP 800-22 | ent, bits per byte | ent chi-square |
+|---|:---:|---|---:|:---:|
+| Raw sensor samples | no | not applicable | 4.51 | fails |
+| Sensor only, conditioned | no | 3 of 188 sub-tests outside the band, 2.2 expected | 7.9999 | passes |
+| Sensor and fish, conditioned | no | 6 of 188 outside, 2.2 expected | 7.9999 | passes |
+| PufferRNG output, 100 x 10<sup>6</sup> bits | yes | 5 of 188 outside, 3.6 expected | 8.0000 | passes |
+
+**dieharder** ran every test of its `-a` battery on 50 GiB of PufferRNG output
+streamed through a pipe, so no data was ever rewound: **83 passed, 5 weak,
+0 failed** out of 88 results. A few weak results are expected from a perfect
+generator at this count.
+
+These suites are a sanity check, not a measurement of entropy. A hash of a
+simple counter would pass them too. That is why the raw samples are shown
+failing `ent`, and why credit comes only from the SP 800-90B min-entropy of the
+raw samples.
+
+<details>
+<summary><b>More charts: SP 800-22 pass proportions, p-value uniformity, ent</b></summary>
+<br>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/sp800-22-proportions-dark.png">
+  <img alt="SP 800-22 pass proportions per test for conditioned streams and PufferRNG output" src="docs/media/sp800-22-proportions-light.png" width="100%">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/sp800-22-pvalues-dark.png">
+  <img alt="Histogram of SP 800-22 p-values of PufferRNG output" src="docs/media/sp800-22-pvalues-light.png" width="100%">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/ent-raw-vs-conditioned-dark.png">
+  <img alt="ent entropy per byte of raw samples versus hashed streams, with SP 800-90B min-entropy" src="docs/media/ent-raw-vs-conditioned-light.png" width="100%">
+</picture>
+
+</details>
+
+### Tracking quality
+
+A swaying plant or a bubble tracked as a fish would be credited as entropy
+and attributed to a fish that does not exist. The tracker is therefore scored
+against the simulator's ground truth.
+
+| | day | night (infrared) |
+|---|---:|---:|
+| Detection precision | 98.4 % | 91.3 % |
+| Fish recall | 94.7 % | 53.7 % |
+| Observations not on a real fish | 0.46 % | 0.83 % |
+| Identity purity | 99.6 % | no colour at night |
+| Mean centre error | 2.2 px | 4.3 px |
+
+A track only becomes a fish once it travels, which keeps anchored plants and
+rising bubbles out of the fish channel. Without that classifier, 76 % of fish
+observations in the default tank came from clutter.
 
 ## Compared with LavaRand
 
@@ -260,9 +378,9 @@ can say which fish helped make it, and the public output can be checked by
 anyone without trusting the server.
 
 **Where the entropy really comes from.** The honest answer for this project is
-the camera sensor. Photon shot noise and read noise fill thousands of
-temporal-difference samples per frame, while six fish contribute a few hundred
-credited bits per second. The fish are the visible, explainable part, and they
+the camera sensor. Shot noise and read noise fill four thousand
+temporal-difference samples per frame and earn about 100,000 credited bits per
+second, while six fish earn about 240. The fish are the visible, explainable part, and they
 are also the part an attacker cannot simulate without a live tank. The same
 balance very likely holds for lava lamps: the motion is what people see, the
 sensor noise is where most of the bits are.
