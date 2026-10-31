@@ -46,7 +46,7 @@ import json
 import os
 import re
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -165,6 +165,8 @@ class _TrackAppearance:
     n_obs: int = 0
     fish_id: str | None = None
     unbound_frames: int = 0
+    change: float | None = None  # distance of the latest crop from the model before it
+    latest: Float32Array | None = None  # histogram of the latest crop (this frame only)
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +331,55 @@ class FishReID:
         state = self._tracks.get(track_id)
         return state.fish_id if state is not None else None
 
+    def appearance_change(self, track_id: int) -> float | None:
+        """How different the track's latest crop looked from its own appearance model.
+
+        Bhattacharyya distance between this frame's histogram and the
+        track's running histogram *before* this frame was folded in;
+        ``None`` without a colour observation this frame (IR, tiny crop) or
+        while the model is younger than ``min_track_obs``. A sustained large
+        value means the track now follows a different object.
+        """
+        state = self._tracks.get(track_id)
+        return state.change if state is not None else None
+
+    def track_appearance(self, track_id: int, *, latest: bool = False) -> Float32Array | None:
+        """The track's running colour histogram, or with ``latest`` this frame's crop alone.
+
+        ``None`` before any colour observation (or, with ``latest``, without
+        one this frame: IR, crop too small).
+        """
+        state = self._tracks.get(track_id)
+        if state is None:
+            return None
+        hist = state.latest if latest else state.hist
+        return None if hist is None else hist.copy()
+
+    def forget_track(self, track_id: int) -> None:
+        """Drop a track's appearance model and identity binding (it changed objects)."""
+        self._tracks.pop(track_id, None)
+
+    def closest_identity(
+        self, track_id: int, exclude: Collection[str] = ()
+    ) -> tuple[str, float] | None:
+        """Best gallery match for a track's appearance so far, without binding it.
+
+        Returns ``(fish_id, Bhattacharyya distance)`` of the closest identity
+        not in ``exclude``, or ``None`` when the track has too little
+        appearance evidence (fewer than ``min_track_obs`` colour
+        observations, e.g. IR frames) or no identity is available. Used to
+        recognise a known fish that reappears on a fresh track.
+        """
+        state = self._tracks.get(track_id)
+        if state is None or state.hist is None or state.n_obs < self.min_track_obs:
+            return None
+        free = [ident for fid, ident in self._gallery.items() if fid not in exclude]
+        if not free:
+            return None
+        dist = bhattacharyya_distance(state.hist, np.stack([ident.histogram for ident in free]))[0]
+        best = int(np.argmin(dist))
+        return free[best].fish_id, float(dist[best])
+
     # ----------------------------------------------------------------- update
 
     def update(
@@ -352,6 +403,8 @@ class FishReID:
             if state is None:
                 state = self._tracks[tr.track_id] = _TrackAppearance(self._frame)
             state.last_frame = self._frame
+            state.change = None
+            state.latest = None
             if gray:
                 continue
             hist = appearance_histogram(
@@ -360,9 +413,12 @@ class FishReID:
             if hist is None:
                 continue
             frame_hists[tr.track_id] = hist
+            state.latest = hist
             if state.hist is None:
                 state.hist = hist.copy()
             else:
+                if state.n_obs >= self.min_track_obs:
+                    state.change = float(bhattacharyya_distance(hist, state.hist)[0, 0])
                 rate = self.track_rate
                 state.hist = _normalise((1.0 - rate) * state.hist + rate * hist)
             state.n_obs += 1

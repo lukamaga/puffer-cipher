@@ -59,6 +59,16 @@ def circle(center: Point, radius: float, omega: float, phase: float = 0.0) -> Pa
     return path
 
 
+def sway(anchor: Point, amplitude: Point, period: float, phase: float = 0.0) -> Path:
+    """Oscillation around a fixed anchor: a leaf in the current."""
+
+    def path(t: float) -> Point:
+        s = math.sin(2.0 * math.pi * t / period + phase)
+        return (anchor[0] + amplitude[0] * s, anchor[1] + amplitude[1] * s)
+
+    return path
+
+
 def wander(rng: np.random.Generator, center: Point, amplitude: Point, n_terms: int = 3) -> Path:
     """Smooth pseudo-random path: a sum of sinusoids with random frequencies and phases."""
     freqs = rng.uniform(0.05, 0.4, size=(2, n_terms))
@@ -242,3 +252,4 @@ BLUE: BGR = (200, 60, 20)
 YELLOW: BGR = (40, 220, 235)
 MAGENTA: BGR = (190, 40, 210)
 WHITE: BGR = (235, 235, 235)
+GREEN: BGR = (60, 150, 50)

@@ -6,11 +6,21 @@ import math
 from collections.abc import Callable
 from dataclasses import replace
 
+import cv2
 import numpy as np
 import pytest
 
-from puffer.types import Detection
-from puffer.vision.detector import MotionDetector, _Blob, _merge_overlapping, is_grayscale
+from puffer.types import Detection, Frame
+from puffer.vision.detector import (
+    MotionDetector,
+    _Blob,
+    _merge_overlapping,
+    blob_solidity,
+    blob_thickness,
+    illumination_ncc,
+    is_grayscale,
+    split_touching,
+)
 from puffer.vision.geometry import boxes_to_array, iou_matrix
 
 from .scenes import (
@@ -302,3 +312,147 @@ def test_is_grayscale() -> None:
 def test_parameter_validation(kwargs: dict[str, float], match: str) -> None:
     with pytest.raises(ValueError, match=match):
         MotionDetector(**kwargs)  # type: ignore[arg-type]
+
+
+# --------------------------------------------------------------------------
+# dynamic background, blob features, tracker hints
+# --------------------------------------------------------------------------
+
+
+def flicker(frame_index: int, height: int = 240, width: int = 320) -> np.ndarray:
+    """Caustic-like light on the gravel strip: bright, saturating ripples drifting over it.
+
+    Saturated highlights wipe out the gravel texture, so the illumination
+    (texture-correlation) test cannot explain them: this is the dynamic
+    threshold's job.
+    """
+    t = frame_index / 30.0
+    yy, xx = np.mgrid[0:height, 0:width].astype(np.float32)
+    waves = np.sin(0.21 * xx + 0.13 * yy - 2.7 * t) * np.cos(0.17 * xx - 0.29 * yy + 1.9 * t)
+    light = 300.0 * np.clip(waves - 0.5, 0.0, None)
+    light[: int(height * 0.85)] = 0.0  # only on the floor
+    return light
+
+
+def with_flicker(frame: Frame) -> Frame:
+    img = frame.image.astype(np.float32) + flicker(frame.index)[..., None]
+    return replace(frame, image=np.clip(img, 0, 255).astype(np.uint8))
+
+
+def test_flickering_light_raises_its_own_threshold() -> None:
+    """With tracker hints, light rippling over the gravel stops producing blobs within seconds."""
+    crossing = waypoints([(0.0, (-60.0, 222.0)), (8.0, (-60.0, 222.0)), (11.0, (380.0, 222.0))])
+    scene = Scene([FishSpec("bottom-dweller", BLUE, 30, 12, crossing)], seed=21)
+    learned = MotionDetector()
+    frozen = MotionDetector(dynamic_k=0.0)
+    counts: dict[str, list[int]] = {"learned": [], "frozen": []}
+    hits = fish_frames = 0
+    for frame, truth in scene.frames(330):
+        frame = with_flicker(frame)
+        for name, detector in (("learned", learned), ("frozen", frozen)):
+            detector.protect([])  # what FishTracker does when no fish is known
+            dets = detector.detect(frame)
+            fish = [d for d in dets if nearest_truth(centre(d), truth, 12.0) is not None]
+            counts[name].append(len(dets) - len(fish))
+            if name == "learned" and truth[0].visible_frac == 1.0:
+                fish_frames += 1
+                hits += bool(fish)
+    early = np.mean(counts["learned"][35:95])
+    late = np.mean(counts["learned"][150:240])  # before the fish arrives
+    assert early > 1.0  # the ripples do produce blobs at first ...
+    assert late < 0.1  # ... until their pixels' thresholds have risen
+    assert np.mean(counts["frozen"][150:240]) > 2.0  # without the map they never stop
+    thr = learned.threshold_map
+    assert thr is not None
+    assert float(np.median(thr[215:, :])) > 1.5 * learned.last_threshold  # the gravel
+    assert float(np.median(thr[60:150, :])) == pytest.approx(learned.last_threshold)  # open water
+    assert fish_frames > 40
+    assert hits / fish_frames >= 0.9  # a fish over the ripples is still seen
+
+
+def test_hints_keep_a_resting_fish_but_not_a_resting_ornament() -> None:
+    """Hinted: a resting fish stays detected, an unhinted object that stays put is learned."""
+    fish_path = waypoints([(0.0, (-40.0, 70.0)), (1.5, (90.0, 70.0)), (14.0, (90.0, 70.0))])
+    ornament_path = waypoints(
+        [(0.0, (360.0, 160.0)), (1.5, (230.0, 160.0)), (14.0, (230.0, 160.0))]
+    )
+    scene = Scene(
+        [
+            FishSpec("fish", ORANGE, 32, 13, fish_path),
+            FishSpec("ornament", MAGENTA, 32, 13, ornament_path),
+        ],
+        seed=22,
+    )
+    detector = MotionDetector()
+    seen = {"fish": 0, "ornament": 0}
+    frames = 0
+    for frame, truth in scene.frames(420):
+        fish_truth = next(t for t in truth if t.name == "fish")
+        detector.protect([fish_truth.bbox])  # the tracker knows which one is a fish
+        dets = detector.detect(frame)
+        if frame.timestamp < 12.0:
+            continue
+        frames += 1
+        for t in truth:
+            seen[t.name] += any(nearest_truth(centre(d), [t], 8.0) for d in dets)
+    assert seen["fish"] / frames >= 0.95
+    assert seen["ornament"] == 0
+
+
+def test_split_touching_blobs() -> None:
+    canvas = np.zeros((60, 100), np.uint8)
+    cv2.circle(canvas, (30, 30), 16, 1, -1)
+    cv2.circle(canvas, (70, 30), 16, 1, -1)
+    cv2.line(canvas, (30, 30), (70, 30), 1, 3)  # a thin neck joins the two bodies
+    parts = split_touching(canvas.astype(bool), min_thickness=10.0)
+    assert len(parts) == 2
+    assert {int(p.sum()) // 100 for p, _ in parts} == {
+        int(parts[0][0].sum()) // 100
+    }  # similar halves
+    single = np.zeros((60, 100), np.uint8)
+    cv2.ellipse(single, (50, 30), (30, 12), 0, 0, 360, 1, -1)
+    assert len(split_touching(single.astype(bool), min_thickness=10.0)) == 1
+    network = np.zeros((60, 100), np.uint8)
+    for k in range(5):  # thin branching lines: never split
+        cv2.line(network, (5 + 18 * k, 5), (95 - 15 * k, 55), 1, 3)
+    assert len(split_touching(network.astype(bool), min_thickness=10.0)) == 1
+
+
+def test_blob_thickness_and_solidity() -> None:
+    disc = np.zeros((50, 50), np.uint8)
+    cv2.circle(disc, (25, 25), 10, 1, -1)
+    assert blob_thickness(disc.astype(bool)) == pytest.approx(21.0, abs=1.5)
+    assert blob_solidity(disc.astype(bool)) > 0.95
+    ring = np.zeros((50, 50), np.uint8)
+    cv2.circle(ring, (25, 25), 20, 1, 3)
+    assert blob_solidity(ring.astype(bool)) < 0.5
+    assert blob_thickness(ring.astype(bool)) < 8.0
+
+
+def test_illumination_ncc_tells_light_from_objects(rng: np.random.Generator) -> None:
+    bg = (100.0 + 25.0 * rng.standard_normal((30, 30, 3))).astype(np.float32)
+    inside = np.ones((30, 30), bool)
+    brighter = bg * 1.3 + 15.0  # a caustic: same texture, more light
+    ncc = illumination_ncc(brighter, bg, inside, min_std=4.0)
+    assert ncc is not None
+    assert ncc > 0.99
+    fish = np.full_like(bg, 180.0) + rng.standard_normal(bg.shape).astype(np.float32)
+    ncc = illumination_ncc(fish, bg, inside, min_std=4.0)
+    assert ncc is not None
+    assert abs(ncc) < 0.2
+    flat = np.full_like(bg, 90.0)
+    assert illumination_ncc(brighter, flat, inside, min_std=4.0) is None
+
+
+def test_dim_scene_scales_the_threshold_floor() -> None:
+    """An IR night scene at a third of the brightness: the floor scales with it (Weber)."""
+    bright = Scene([], seed=23, noise_sigma=1.0)
+    dim = Scene([], seed=23, noise_sigma=1.0, lighting=lambda t: 0.33)
+    detectors = []
+    for scene in (bright, dim):
+        detector = MotionDetector()
+        for frame, _ in scene.frames(40):
+            detector.detect(frame)
+        detectors.append(detector)
+    assert detectors[0].last_threshold == pytest.approx(detectors[0].threshold)
+    assert detectors[1].last_threshold < 0.6 * detectors[0].last_threshold
