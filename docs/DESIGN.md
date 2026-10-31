@@ -251,9 +251,12 @@ requires a cooldown (5 s) and a fresh start-up window.
 
 `credit_bits = n_samples * min(H_est, H_cap) * safety_factor`
 
-`H_est` is the rolling min-entropy estimate, `min(MCV, Lag prediction,
-MultiMMC prediction)` over the last 4096 samples, refreshed every 30 frames
-(the predictors catch periodic or repeated data that MCV alone overrates), `H_cap` caps per-sample credit
+`H_est` is the rolling min-entropy estimate over the last 4096 samples
+(chronological order), refreshed every 30 frames: the minimum of MCV, Lag
+prediction and MultiMMC prediction on the bytes, and 8 x the Collision and
+Compression estimates on their bitstring. The predictors catch periodic or
+repeated data; the bitstring estimators catch structure inside each byte,
+such as the sign bits of small pixel differences, `H_cap` caps per-sample credit
 (sensor 4.0, fish 3.0), `safety_factor = 0.5`. DEGRADED halves credit again.
 Fish credit is split between fish proportionally to their sample counts.
 

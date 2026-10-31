@@ -52,9 +52,12 @@ import numpy.typing as npt
 
 from puffer.entropy.estimators import (
     InsufficientDataError,
+    collision,
+    compression,
     lag,
     most_common_value,
     multi_mmc,
+    to_bitstring,
 )
 from puffer.types import (
     CHANNEL_FISH,
@@ -244,21 +247,30 @@ def compute_credit(
     return n_samples * min(max(h_est, 0.0), h_cap) * safety_factor * multiplier
 
 
+_BITS_PER_SAMPLE = 8
+
+
 def _min_entropy_estimate(window: npt.NDArray[np.uint8]) -> float:
-    """min(MCV, Lag, MultiMMC) over ``window``; see :class:`RollingEstimate`."""
+    """Minimum of five SP 800-90B estimators over ``window``; see :class:`RollingEstimate`."""
     estimates = [most_common_value(window).min_entropy]
     for estimator in (lag, multi_mmc):
         try:
             estimates.append(estimator(window).min_entropy)
         except InsufficientDataError:
             continue  # too few samples for this predictor: MCV still bounds it
+    bits = to_bitstring(window, _BITS_PER_SAMPLE)
+    for bit_estimator in (collision, compression):
+        try:
+            estimates.append(_BITS_PER_SAMPLE * bit_estimator(bits).min_entropy)
+        except InsufficientDataError:
+            continue
     return min(estimates)
 
 
 class RollingEstimate:
     """Quick per-sample min-entropy estimate over the last ``window`` samples.
 
-    The estimate is the minimum of three SP 800-90B estimators:
+    The estimate is the minimum of five SP 800-90B estimators:
 
     * Most Common Value (6.3.1) bounds the probability of the likeliest
       symbol. It is cheap but blind to *order*: a deterministic cycle
@@ -268,11 +280,18 @@ class RollingEstimate:
       Markov-dependent data is predictable, so they drive the estimate to
       ~0 bits for exactly the sources MCV overrates (a stuck cycle, a looped
       pattern, a decoy track replaying the same motion).
+    * Collision (6.3.2) and Compression (6.3.4) on the *bitstring* of the
+      window (section 3.1.3), scaled by 8 bits per sample. Structure inside
+      the bits of a byte, such as the small, symmetric pixel differences of
+      sensor noise, is invisible to byte-level estimators: on simulated sensor
+      data MCV says ~3.3 bits per sample while the bitstring Collision
+      estimate, like the full offline assessment, says ~1.7.
 
     Taking the minimum keeps credit honest: a channel is credited only for
-    what neither its symbol frequencies nor its sequence structure explain.
-    The estimate is refreshed every ``refresh_every`` :meth:`feed` calls (one
-    call per frame), costing ~25 ms per refresh for a 4096-sample window, so
+    what neither its symbol frequencies, its sequence structure nor its bit
+    patterns explain. The estimate is refreshed every ``refresh_every``
+    :meth:`feed` calls (one call per frame), costing ~30 ms per refresh for a
+    4096-sample window, so
     the per-frame cost stays well under a millisecond. Until ``min_samples``
     samples exist ``h_est`` is 0: the bounds are valid for small samples but
     so loose that they would trip the low-entropy check during start-up.
@@ -331,7 +350,13 @@ class RollingEstimate:
         due = self._h is None or self._since_refresh >= self.refresh_every
         if not due or self._count < self.min_samples:
             return False
-        self._h = _min_entropy_estimate(self._buf[: self._count])
+        if self._count < self.window:
+            ordered = self._buf[: self._count]
+        else:  # full ring: oldest sample sits at the write position
+            ordered = np.concatenate((self._buf[self._pos :], self._buf[: self._pos]))
+        # Predictors and bitstring estimators depend on sample order, so the
+        # window must be chronological, not in ring-buffer storage order.
+        self._h = _min_entropy_estimate(ordered)
         self._since_refresh = 0
         return True
 

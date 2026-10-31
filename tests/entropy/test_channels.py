@@ -177,13 +177,29 @@ def test_non_finite_innovation_is_absorbed_but_never_sampled(make_tracking, make
 # -- rolling estimate and credit ---------------------------------------------
 
 
-def test_rolling_estimate_tracks_mcv_of_the_last_window(rng):
+def test_rolling_estimate_tracks_the_last_window(rng):
+    from puffer.entropy.channels import _min_entropy_estimate
+
     est = RollingEstimate(h_cap=4.0, window=4096, refresh_every=1)
     stream = rng.integers(0, 256, size=20_000, dtype=np.uint8)
     for chunk in np.array_split(stream, 37):  # uneven chunks wrap the ring buffer
         est.feed(chunk)
-    assert est.h_est == pytest.approx(most_common_value(stream[-4096:]).min_entropy)
+    last = stream[-4096:]
+    assert est.h_est == pytest.approx(_min_entropy_estimate(last))
+    assert est.h_est <= most_common_value(last).min_entropy
     assert est.samples_seen == stream.size
+
+
+def test_rolling_estimate_sees_bit_level_structure(rng):
+    """Small symmetric differences look rich per byte but are poor per bit."""
+    from puffer.entropy.estimators import collision, to_bitstring
+
+    noise = (np.round(rng.normal(0, 2.0, 4096)).astype(np.int64) % 256).astype(np.uint8)
+    est = RollingEstimate(h_cap=4.0)
+    assert est.feed(noise)
+    bitwise = 8 * collision(to_bitstring(noise, 8)).min_entropy
+    assert est.h_est <= bitwise + 1e-9
+    assert est.h_est < most_common_value(noise).min_entropy - 0.5
 
 
 def test_rolling_estimate_waits_for_min_samples_then_refreshes_every_n_frames(rng):
@@ -233,9 +249,16 @@ def test_rolling_estimate_sees_through_a_deterministic_cycle():
 
 
 def test_rolling_estimate_keeps_credit_for_noise(rng):
+    """Gaussian pixel differences still earn credit, at their bit-level rate.
+
+    For differences with sigma 2.8 stored mod 256, MCV sees ~2.8 bits per
+    sample, but the high bits copy the sign, and the bitstring Collision
+    estimate settles around 1.2 bits per sample. Credit follows the lower one.
+    """
     from puffer.entropy.channels import RollingEstimate
 
     noise = (np.round(rng.normal(0, 2.8, 4096)).astype(np.int64) % 256).astype(np.uint8)
     est = RollingEstimate(h_cap=4.0)
     assert est.feed(noise)
-    assert 2.3 < est.h_est < 3.3
+    assert 0.8 < est.h_est < 2.0
+    assert est.credit(4096) > 1000
