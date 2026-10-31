@@ -24,9 +24,14 @@ function Strip({ bits, reference, label }: { bits: string; reference?: string; l
         role="img"
       >
         {[...bits].map((b, i) => {
+          const unknown = b === '?';
           const miss = reference !== undefined && reference[i] !== b;
           return (
-            <span key={i} className={`cell${b === '1' ? ' cell--on' : ''}${miss ? ' cell--miss' : ''}`} />
+            <span
+              key={i}
+              className={`cell${b === '1' ? ' cell--on' : ''}${unknown ? ' cell--unknown' : ''}${miss ? ' cell--miss' : ''}`}
+              title={unknown ? 'not decodable in this frame window' : undefined}
+            />
           );
         })}
       </div>

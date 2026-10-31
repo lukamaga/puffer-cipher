@@ -1269,6 +1269,15 @@ textarea {
   background: var(--led-on);
 }
 
+.cell--unknown {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--led-off) 0 3px,
+    color-mix(in srgb, var(--led-off) 55%, transparent) 3px 6px
+  );
+  opacity: 0.7;
+}
+
 .cell--miss::after {
   content: '';
   position: absolute;

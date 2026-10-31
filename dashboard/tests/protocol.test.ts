@@ -334,3 +334,64 @@ describe('/api/random', () => {
     );
   });
 });
+
+describe('backend edge cases (DESIGN 3.4 / 4.5 / 5)', () => {
+  it('accepts [] as "no frames" in receipts and beacon summaries', async () => {
+    const { entropyReceipt, parsePulseSummary } = await import('../src/lib/protocol.ts');
+    const receipt = entropyReceipt({
+      receipt_version: 1,
+      purpose: 'key',
+      bytes: 32,
+      timestamp_ms: 1,
+      frames: [],
+      mode: 'unknown',
+      liveness: { state: 'calibrating', confidence_bits: 0 },
+      channels: {
+        sensor: { credited_bits: 0, share: null, health: 'startup' },
+        fish: { credited_bits: 0, share: null, health: 'startup' },
+        system: { credited_bits: 256, share: null, health: 'ok' },
+      },
+      fish: [],
+    });
+    expect(receipt.frames).toBeNull();
+    expect(receipt.mode).toBe('unknown');
+    const summary = parsePulseSummary(
+      JSON.stringify({
+        fish_count: 0,
+        fish_bits: 0,
+        sensor_bits: 0,
+        system_bits: 256,
+        mode: 'day',
+        liveness: 'calibrating',
+        liveness_confidence_bits: 0,
+        health: { sensor: 'startup', fish: 'startup' },
+        top_fish: [],
+        frames: [],
+      }),
+    );
+    expect(summary?.frames).toBeNull();
+  });
+
+  it("accepts '?' for undecodable observed LED bits but not in expected bits", async () => {
+    const { parseServerMessage } = await import('../src/lib/protocol.ts');
+    const led = (observed: string, expected = '0101') =>
+      parseServerMessage(
+        JSON.stringify({
+          type: 'led',
+          data: {
+            state: 'verified',
+            match_ratio: 0.95,
+            lag_s: 0.08,
+            confidence_bits: 40,
+            expected,
+            observed,
+            window_start: 0,
+            window_end: 12.8,
+          },
+        }),
+      );
+    expect(led('01?1').ok).toBe(true);
+    expect(led('01x1').ok).toBe(false);
+    expect(led('0101', '01?1').ok).toBe(false);
+  });
+});

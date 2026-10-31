@@ -120,6 +120,24 @@ const bitString: Decoder<string> = (v, path = '') => {
   return s;
 };
 
+/**
+ * Observed LED bits: like {@link bitString} but `?` marks a bit the verifier
+ * could not decode (no usable frames, or both Manchester halves alike).
+ */
+const observedBitString: Decoder<string> = (v, path = '') => {
+  const s = string(v, path);
+  if (!/^[01?]*$/.test(s)) throw new DecodeError(path, 'string of 0/1/?', v);
+  return s;
+};
+
+/**
+ * A `[first, last]` frame range. The backend sends `[]` (summaries never
+ * contain null, DESIGN 3.4) when no camera frame was credited yet; older
+ * payloads may send null. Both normalise to null.
+ */
+const frameRange: Decoder<readonly [first: number, last: number] | null> = (v, path = '') =>
+  Array.isArray(v) && v.length === 0 ? null : nullable(tuple(integer, integer))(v, path);
+
 /** Older backends send the version as a number; normalise to a string. */
 const versionString: Decoder<string> = (v, path = '') =>
   typeof v === 'number' ? String(v) : string(v, path);
@@ -144,6 +162,9 @@ export const livenessState = literal(...LIVENESS_STATES);
 
 export type LightMode = 'day' | 'night';
 export const lightMode = literal('day', 'night');
+/** Receipts and beacon summaries made before the first frame report `unknown`. */
+export type ReceiptMode = LightMode | 'unknown';
+const receiptMode = literal('day', 'night', 'unknown');
 
 export type BBox = readonly [x1: number, y1: number, x2: number, y2: number];
 export type Point = readonly [x: number, y: number];
@@ -174,7 +195,7 @@ export const livenessStatus: Decoder<LivenessStatus> = object<LivenessStatus>({
   lag_s: number,
   confidence_bits: number,
   expected: bitString,
-  observed: bitString,
+  observed: observedBitString,
   window_start: number,
   window_end: number,
 });
@@ -250,7 +271,7 @@ export interface EntropyReceipt {
   bytes: number;
   timestamp_ms: number;
   frames: readonly [first: number, last: number] | null;
-  mode: LightMode;
+  mode: ReceiptMode;
   liveness: { state: LivenessState; confidence_bits: number };
   channels: Record<ChannelName, ReceiptChannel>;
   fish: ReceiptFish[];
@@ -281,8 +302,8 @@ export const entropyReceipt: Decoder<EntropyReceipt> = object<EntropyReceipt>({
   purpose: string,
   bytes: integer,
   timestamp_ms: integer,
-  frames: nullable(tuple(integer, integer)),
-  mode: lightMode,
+  frames: frameRange,
+  mode: receiptMode,
   liveness: object({ state: livenessState, confidence_bits: number }),
   channels: object<Record<ChannelName, ReceiptChannel>>({
     sensor: receiptChannel,
@@ -333,7 +354,7 @@ export interface PulseSummary {
   fish_bits: number;
   sensor_bits: number;
   system_bits: number;
-  mode: LightMode;
+  mode: ReceiptMode;
   liveness: LivenessState;
   liveness_confidence_bits: number;
   health: Record<string, HealthState>;
@@ -346,12 +367,12 @@ export const pulseSummary: Decoder<PulseSummary> = object<PulseSummary>({
   fish_bits: integer,
   sensor_bits: integer,
   system_bits: integer,
-  mode: lightMode,
+  mode: receiptMode,
   liveness: livenessState,
   liveness_confidence_bits: integer,
   health: record(healthState),
   top_fish: array(object({ fish_id: string, name: string, bits: integer })),
-  frames: nullable(tuple(integer, integer)),
+  frames: frameRange,
 });
 
 /** Parse a pulse's summary for display. The hash check never depends on this. */
