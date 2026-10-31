@@ -1,4 +1,4 @@
-# puffer-cipher — design contract
+# puffer-cipher design contract
 
 This document is the single source of truth for module boundaries, byte
 formats and wire protocols. Code, tests and the dashboard must agree with it.

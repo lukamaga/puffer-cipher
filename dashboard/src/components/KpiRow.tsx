@@ -96,7 +96,7 @@ export function KpiRow({ history, fish }: { history: EntropyHistory; fish: FishC
     <div className="kpis area-kpis">
       <Kpi
         label="Camera entropy"
-        value={camera !== null ? formatRate(camera) : '—'}
+        value={camera !== null ? formatRate(camera) : '-'}
         detail="sensor + fish, credited"
         aside={<Sparkline values={trend} />}
       />
@@ -109,7 +109,7 @@ export function KpiRow({ history, fish }: { history: EntropyHistory; fish: FishC
               <span className="kpi__of"> / {fish.length}</span>
             </>
           ) : (
-            '—'
+            '-'
           )
         }
         detail={hidden.length > 0 ? `${hidden.map((f) => f.name).join(', ')} hiding` : 'all fish tracked'}
@@ -136,7 +136,7 @@ export function KpiRow({ history, fish }: { history: EntropyHistory; fish: FishC
               <span className="kpi__of"> bits</span>
             </>
           ) : (
-            '—'
+            '-'
           )
         }
         detail={led ? `camera lag ${Math.round(led.lag_s * 1000)} ms` : 'LED challenge'}
@@ -144,7 +144,7 @@ export function KpiRow({ history, fish }: { history: EntropyHistory; fish: FishC
       />
       <Kpi
         label="Beacon height"
-        value={pulse ? `#${pulse.index.toLocaleString('en')}` : '—'}
+        value={pulse ? `#${pulse.index.toLocaleString('en')}` : '-'}
         detail={
           nextIn === null
             ? 'signed public randomness'

@@ -56,7 +56,7 @@ function Receipt({ receipt, fish }: { receipt: EntropyReceipt; fish: FishCard[] 
         <span className="muted">
           {receipt.frames && (
             <>
-              frames {receipt.frames[0].toLocaleString('en')}–{receipt.frames[1].toLocaleString('en')} ·{' '}
+              frames {receipt.frames[0].toLocaleString('en')}-{receipt.frames[1].toLocaleString('en')} ·{' '}
             </>
           )}
           {receipt.mode} · {formatClock(receipt.timestamp_ms)}

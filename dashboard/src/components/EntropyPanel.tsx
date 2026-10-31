@@ -302,7 +302,7 @@ export function EntropyPanel({ history }: { history: EntropyHistory }) {
                     <span className="line-key" style={{ background: meta.color }} aria-hidden />
                     {meta.label}
                   </div>
-                  <div className="spark-row__value">{shown ? formatRate(shown.rate[channel]) : '—'}</div>
+                  <div className="spark-row__value">{shown ? formatRate(shown.rate[channel]) : '-'}</div>
                   <div className="spark-row__meta">
                     {stats.h_per_sample !== null ? (
                       <span title="Rolling min-entropy estimate per sample (MCV)">
