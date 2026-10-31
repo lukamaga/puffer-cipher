@@ -461,3 +461,10 @@ def test_render_speed_single_core() -> None:
         cv2.setNumThreads(previous)
     print(f"\nsimulator render speed: {fps:.0f} fps at 640x480 on one core")
     assert fps >= 30.0
+
+
+@pytest.mark.parametrize(("size", "expected"), [((640, 480), (608, 32)), ((320, 240), (304, 16))])
+def test_default_led_position_scales_with_the_frame(size, expected):
+    config = SyntheticConfig(seed=1, width=size[0], height=size[1])
+    assert config.led_xy == expected
+    assert config.led_center == expected

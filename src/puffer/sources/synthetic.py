@@ -172,7 +172,7 @@ class SyntheticConfig:
     noise_sigma_night: float = 6.0
     shot_noise: bool = True
     jpeg_quality: int | None = None
-    led_xy: tuple[int, int] = (608, 32)
+    led_xy: tuple[int, int] | None = None
     led_radius: int = 5
     led_latency_s: float = 0.05
     bubbles: bool = True
@@ -183,6 +183,13 @@ class SyntheticConfig:
     shot_gain_night: float = 0.15
     transition_s: float = 8.0
     plant_sway: float = 1.0
+
+    @property
+    def led_center(self) -> tuple[int, int]:
+        """The LED centre in pixels (``led_xy`` resolved; never ``None``)."""
+        if self.led_xy is None:  # pragma: no cover - resolved in __post_init__
+            raise RuntimeError("SyntheticConfig.led_xy was not resolved")
+        return self.led_xy
 
     def __post_init__(self) -> None:
         if self.fish is not None:
@@ -211,7 +218,15 @@ class SyntheticConfig:
             raise ValueError("noise parameters must be >= 0")
         if self.jpeg_quality is not None and not 1 <= self.jpeg_quality <= 100:
             raise ValueError("jpeg_quality must be within [1, 100] or None")
-        x, y = self.led_xy
+        if self.led_xy is None:
+            # Top-right corner, (608, 32) at the 640x480 reference size, scaled
+            # so every supported frame size has a valid default position.
+            object.__setattr__(
+                self,
+                "led_xy",
+                (round(608 * self.width / 640), round(32 * self.height / 480)),
+            )
+        x, y = self.led_center
         if not (0 <= x < self.width and 0 <= y < self.height):
             raise ValueError(
                 f"led_xy {self.led_xy} is outside the {self.width}x{self.height} frame"
@@ -314,7 +329,7 @@ class SyntheticAquarium(FrameSourceBase):
         self._bubbles = (
             _scene.Bubbles(layout, np.random.default_rng(bubble_ss)) if cfg.bubbles else None
         )
-        self._lamp = _scene.LedLamp(cfg.led_xy, cfg.led_radius)
+        self._lamp = _scene.LedLamp(cfg.led_center, cfg.led_radius)
         self._ir = _scene.ir_converter(self._scene)
 
         self._specs = cfg.cast
@@ -323,7 +338,7 @@ class SyntheticAquarium(FrameSourceBase):
             for spec in self._specs
         ]
         x0, y0, x1, y1 = layout.swim_bounds
-        led_keep_out = (float(cfg.led_xy[0]), float(cfg.led_xy[1]), 3.0 * cfg.led_radius)
+        led_keep_out = (float(cfg.led_center[0]), float(cfg.led_center[1]), 3.0 * cfg.led_radius)
         self._school = _school.School(
             self._specs,
             _school.Box(x0, y0, x1, y1),

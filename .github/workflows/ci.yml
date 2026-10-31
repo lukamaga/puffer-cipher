@@ -29,10 +29,15 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # runs the dashboard's TypeScript decoders against the API's messages
       - name: Install system test tools (ent, dieharder)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ent dieharder
       - name: Install package
         run: pip install -e ".[dev]"
+      - name: Beacon test vectors are up to date
+        run: python -m puffer.beacon.vectors --check
       - name: Ruff
         run: |
           ruff check src tests scripts

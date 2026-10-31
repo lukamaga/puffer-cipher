@@ -17,6 +17,7 @@ released, LED off, statistics flushed), and finally the beacon store.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import logging
 import threading
 from collections.abc import Iterator
@@ -94,8 +95,24 @@ def running(config: PufferConfig) -> Iterator[FastAPI]:
             beacon.store.close()
 
 
+def live_source_spec(spec: str) -> str:
+    """``spec`` with real-time pacing switched on for the simulator.
+
+    Offline tools (keygen, analyze, tests) run the simulator as fast as the CPU
+    allows. A server shows it to people, so simulated time must track wall
+    time: otherwise fish swim at several times their speed on a fast machine
+    and the beacon's minute is not a minute of fish. An explicit ``realtime=``
+    in the spec always wins.
+    """
+    kind, _, options = spec.partition(":")
+    if kind.strip() != "synthetic" or "realtime=" in options:
+        return spec
+    return f"{kind}:{options},realtime=1" if options else f"{kind}:realtime=1"
+
+
 def serve(config: PufferConfig) -> None:
     """Run engine, beacon and API until interrupted (``puffer serve``)."""
+    config = dataclasses.replace(config, source=live_source_spec(config.source))
     with running(config) as app:
         logger.info("puffer serving on http://%s:%d", config.host, config.port)
         uvicorn.run(app, host=config.host, port=config.port, **UVICORN_OPTIONS)

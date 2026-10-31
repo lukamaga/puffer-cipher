@@ -42,22 +42,6 @@ CODECS = {
 LOSSLESS_CODECS = frozenset({"FFV1", "png "})
 
 
-_REFERENCE_SIZE = (640, 480)
-_REFERENCE_LED = (608, 32)  # SyntheticConfig's default LED position, for 640x480
-
-
-def _led_position(width: int, height: int) -> tuple[int, int]:
-    """The default LED position (top-right corner) scaled to the frame size.
-
-    ``SyntheticConfig`` specifies ``led_xy`` in pixels for a 640x480 frame
-    and rejects it when it falls outside a smaller one.
-    """
-    return (
-        round(_REFERENCE_LED[0] * width / _REFERENCE_SIZE[0]),
-        round(_REFERENCE_LED[1] * height / _REFERENCE_SIZE[1]),
-    )
-
-
 class SimMode(enum.StrEnum):
     DAY = "day"
     NIGHT = "night"
@@ -118,7 +102,6 @@ def simulate(
             n_fish=fish,
             seed=seed,
             mode=mode.value,
-            led_xy=_led_position(width, height),
         )
     except ValueError as exc:
         raise CliError(f"invalid simulator settings: {exc}", ExitCode.USAGE) from exc

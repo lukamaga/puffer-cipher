@@ -111,7 +111,7 @@ export function FishPanel({ fish }: { fish: FishCard[] | undefined }) {
  * nothing depends on hovering.
  */
 export function LeaderboardPanel({ fish }: { fish: FishCard[] | undefined }) {
-  const { data, error } = usePolling(() => api.leaderboard(7), 60_000);
+  const { data, error } = usePolling(() => api.leaderboard(7), 15_000);
   const colors = useMemo(() => new Map(fish?.map((f) => [f.fish_id, f.color])), [fish]);
   const max = Math.max(1e-9, ...(data ?? []).map((e) => e.chaos_score));
   return (

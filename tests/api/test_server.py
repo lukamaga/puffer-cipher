@@ -124,3 +124,19 @@ def test_a_crashing_beacon_is_logged_not_fatal(caplog: pytest.LogCaptureFixture)
 
     server._run_beacon(Broken(), threading.Event())  # type: ignore[arg-type]
     assert "beacon stopped" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        ("synthetic", "synthetic:realtime=1"),
+        ("synthetic:seed=7", "synthetic:seed=7,realtime=1"),
+        ("synthetic:seed=7,realtime=0", "synthetic:seed=7,realtime=0"),
+        ("camera:0", "camera:0"),
+        ("video:tank.mp4", "video:tank.mp4"),
+    ],
+)
+def test_serve_paces_only_the_simulator(spec: str, expected: str) -> None:
+    from puffer.api.server import live_source_spec
+
+    assert live_source_spec(spec) == expected
