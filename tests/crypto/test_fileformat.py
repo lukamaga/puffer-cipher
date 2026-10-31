@@ -287,7 +287,7 @@ PASSWORD_HEADER_TAMPER: list[tuple[range, type[PufferCryptoError], str]] = [
     (range(9, 12), AE, "chunk_size in range"),
     (range(12, 20), FE, "password files need a zero key_id"),
     (range(20, 28), FE, "opslimit 1 -> 0 or >= 2**8: outside [1, 16]"),
-    (range(28, 32), FE, "memlimit >= 2**32: above the 4 GiB cap"),
+    (range(28, 32), FE, "memlimit >= 2**32: above the 1 GiB cap"),
     (range(32, 36), AE, "memlimit still in range (<= 16 MiB): different key"),
     (range(36, 52), AE, "salt: different key"),
     (range(52, 76), AE, "secretstream header"),

@@ -118,7 +118,17 @@ offset size  field
   plaintext.
 * Password mode: `nacl.pwhash.argon2id.kdf(32, password, salt, opslimit,
   memlimit)`; defaults `OPSLIMIT_MODERATE`/`MEMLIMIT_MODERATE`, tests may use
-  `*_MIN`.
+  `*_MIN`. Text passwords are NFC-normalised and UTF-8 encoded.
+* Header bounds checked on read *before* Argon2 runs (anti-DoS):
+  `opslimit` in `[OPSLIMIT_MIN, 16]`, `memlimit` in `[MEMLIMIT_MIN, 1 GiB]`,
+  `flags == 0`, password files carry an all-zero key id.
+* Error classes: credential kind mismatch or key-id mismatch → `WrongKeyError`
+  (before any decryption); bytes appended after a *short* final chunk merge
+  into it and fail its tag (`AuthenticationError`), after a full-size final
+  chunk → `FormatError`; EOF inside a chunk with fewer than `ABYTES` bytes or
+  without `TAG_FINAL` → `TruncatedError`. Every case is rejected.
+* The secretstream header (stream nonce) is generated inside libsodium's
+  `init_push`; only the Argon2 salt comes from PufferRNG.
 
 ### 3.3 Short AEAD messages (API demo, dashboard)
 
@@ -173,7 +183,20 @@ JSON form (hex is lowercase):
 
 `summary` is produced with `json.dumps(obj, sort_keys=True,
 separators=(",", ":"), ensure_ascii=True)` and contains only ints, strings,
-bools, lists and objects (no floats - entropy amounts are integer bits).
+bools, lists and objects (no floats, no null - entropy amounts are integer
+bits). Integers (`index`, `timestamp_ms`, summary values) are capped at
+`2**53 - 1` so JavaScript's `JSON.parse` represents them exactly.
+
+`timestamp_ms` is the start of the period slot containing the tick
+(`now - now % period_ms`), at most one pulse per slot; after downtime indices
+stay consecutive and timestamps skip missed slots.
+
+Verification error codes, in check order: `wrong_public_key`,
+`bad_summary_hash`, `bad_signature`, `bad_output`, `bad_genesis`,
+`bad_index`, `bad_timestamp`, `broken_link`, `bad_precommitment`. The
+signature is checked against the *trusted* key (explicit argument, else the
+previous pulse's key, else trust-on-first-use of the embedded key).
+Verifiers use strict RFC 8032 Ed25519 (`zip215: false` in @noble).
 Fields: `fish_count`, `fish_bits`, `sensor_bits`, `system_bits`, `mode`,
 `liveness` (state), `liveness_confidence_bits`, `health` ({channel: state}),
 `top_fish` ([{`fish_id`, `name`, `bits`}]), `frames` ([first, last]).
@@ -236,7 +259,8 @@ Fish credit is split between fish proportionally to their sample counts.
 ### 4.4 Pool and RNG
 
 * `EntropyPool.absorb(output: ChannelOutput, credit_bits: float)` updates a
-  per-channel BLAKE2b-512 accumulator (`person=b"puffer-pool-" + name`) and
+  per-channel BLAKE2b-512 accumulator (`person=(b"puffer-pool-" + name)[:16]`,
+  each absorb framed as `u64(len) || bytes` so the encoding is injective) and
   credit counters (per channel, per fish). Credit per channel saturates at
   `capacity_bits` (default 4096).
 * `EntropyPool.draw() -> PoolDraw` returns the accumulator digests
@@ -249,6 +273,9 @@ Fish credit is split between fish proportionally to their sample counts.
   data = u32(len(purpose)) || purpose || u64(counter) || draw.material)`;
   `out = nacl.utils.randombytes_deterministic(n, seed)`.
   `generate_key()` = `generate(32, "key")`, `nonce()` = `generate(24, "nonce")`.
+  Requests are expanded in 1 MiB chunks, one counter per chunk.
+* Credit is a ledger of estimated *input* min-entropy, not output strength:
+  every seed is 256 bits regardless of how much credit a draw consumed.
 * `PufferRNG.wait_for_credit(bits, timeout)` lets callers (CLI keygen) wait
   until the camera channels have contributed at least `bits` credited bits.
 
@@ -272,7 +299,9 @@ Fish credit is split between fish proportionally to their sample counts.
 }
 ```
 
-`share` is over camera channels only (system is always 256 bits on top).
+`share` is over camera channels only (system is always 256 bits on top);
+it is `null` when no camera credit was drawn. A fish's `share` is its bits
+divided by the fish channel's credited bits.
 
 ### 4.6 Conditioned test streams (analysis only)
 
@@ -295,11 +324,20 @@ Used only to compare "fish only / sensor only / combined" in reports.
   pattern), adaptive two-cluster threshold, one on/off observation per frame.
 * `LivenessVerifier.process(frame) -> LivenessStatus`: sample the observed
   state, compare with `schedule.state_at(t - lag)` for lags in
-  `[0, max_lag_s]` (default 0.5 s), pick the best lag, and over a sliding
-  window of 64 half-symbols require match ratio ≥ 0.9.
+  `[0, max_lag_s]` (default 0.5 s, grid step = frame interval / 4), pick the
+  best lag, and over a sliding window of the last 64 *bits* (128 chips; the
+  two chips of a Manchester bit are complementary, so only bits count as
+  independent evidence) require match ratio ≥ 0.9 and ≥ 24 confidence bits.
   `confidence_bits = -log2(P[Binomial(n, 0.5) ≥ matches] * n_lags)`.
   States follow `types.LivenessState`.
 * A replayed recording shows an old pattern: P(match) ≈ 2^-confidence.
+  `observed` uses `?` for bits that could not be decoded.
+* Commitments: `BLAKE2b-256(person=b"puffer-led", kind || u64(first_symbol)
+  || u32(n_bits) || packbits(bits))` with kind `C` (challenge) or `O`
+  (observation, plus a decodability bitmap).
+* Liveness proves *freshness* (the video is causally downstream of the
+  challenge within `max_lag_s`), not authenticity: an attacker who watches
+  the LED live and composites it into fake video passes. Rule 2 still holds.
 
 ## 6. Vision
 
@@ -359,7 +397,11 @@ JSON text messages `{"type": <type>, "data": {...}}`:
 * Crypto: round trips, tamper/truncation/extension detection, wrong key,
   property tests (hypothesis).
 * SP 800-22: worked examples from NIST SP 800-22 rev1a and the e-expansion
-  reference p-values (Appendix B).
+  reference p-values (Appendix B). Findings: NIST's `data.e` is the bits
+  `10` followed by the fractional expansion; Appendix B's overlapping
+  template (0.110434) and linear complexity (0.826335) values come from STS
+  2.1.2's legacy probability tables, reproduced exactly with
+  `probabilities=` (our default uses the rev1a tables).
 * SP 800-90B: estimators on distributions with known min-entropy.
 * Beacon: cross-language vectors shared with the dashboard.
 

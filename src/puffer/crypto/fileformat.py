@@ -79,8 +79,9 @@ MIN_OPSLIMIT: int = argon2id.OPSLIMIT_MIN
 MAX_OPSLIMIT = 16
 """Four times ``OPSLIMIT_SENSITIVE``; libsodium's own maximum (2**32 - 1) is a DoS."""
 MIN_MEMLIMIT: int = argon2id.MEMLIMIT_MIN
-MAX_MEMLIMIT = 4 * 1024**3
-"""4 GiB; libsodium allows 4 TiB, which no legitimate file needs."""
+MAX_MEMLIMIT: int = argon2id.MEMLIMIT_SENSITIVE
+"""1 GiB (``MEMLIMIT_SENSITIVE``). libsodium allows 4 TiB; a crafted header must not be
+able to make a Raspberry Pi allocate more memory than the strongest preset we ever write."""
 
 SALT_BYTES: int = argon2id.SALTBYTES
 STREAM_HEADER_BYTES: int = nacl.bindings.crypto_secretstream_xchacha20poly1305_HEADERBYTES
