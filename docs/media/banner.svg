@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-labelledby="title desc">
+  <title id="title">puffer-cipher</title>
+  <desc id="desc">A pufferfish in deep water beside the words puffer-cipher: cryptographic randomness from living fish.</desc>
+  <defs>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b3350"/>
+      <stop offset="0.55" stop-color="#072238"/>
+      <stop offset="1" stop-color="#03111f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.27" cy="0.42" r="0.45">
+      <stop offset="0" stop-color="#2bd4c4" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#2bd4c4" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="body" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#ffe9a3"/>
+      <stop offset="0.55" stop-color="#f6c344"/>
+      <stop offset="1" stop-color="#c98a14"/>
+    </radialGradient>
+    <radialGradient id="belly" cx="0.5" cy="0.3" r="0.7">
+      <stop offset="0" stop-color="#fffaf0"/>
+      <stop offset="1" stop-color="#f3dfb2"/>
+    </radialGradient>
+    <radialGradient id="led" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.35" stop-color="#ff7aa8"/>
+      <stop offset="1" stop-color="#ff7aa8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ray" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9be7ff" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#9be7ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#03111f" stop-opacity="0"/>
+      <stop offset="1" stop-color="#03111f" stop-opacity="0.85"/>
+    </linearGradient>
+    <clipPath id="frame"><rect width="1280" height="320" rx="22"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="1280" height="320" fill="url(#water)"/>
+    <rect width="1280" height="320" fill="url(#glow)"/>
+
+    <!-- light shafts -->
+    <polygon points="140,0 230,0 420,320 250,320" fill="url(#ray)"/>
+    <polygon points="330,0 380,0 560,320 470,320" fill="url(#ray)" opacity="0.7"/>
+    <polygon points="900,0 960,0 1120,320 1010,320" fill="url(#ray)" opacity="0.55"/>
+
+    <!-- falling bits, right side -->
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" fill="#5fe3d4">
+      <text x="1118" y="70" opacity="0.30">1 0 1 1 0 0</text>
+      <text x="1118" y="96" opacity="0.22">0 1 0 0 1 1</text>
+      <text x="1118" y="122" opacity="0.34">1 1 0 1 0 1</text>
+      <text x="1118" y="148" opacity="0.18">0 0 1 0 1 1</text>
+      <text x="1118" y="174" opacity="0.28">1 0 0 1 1 0</text>
+      <text x="1118" y="200" opacity="0.20">0 1 1 0 0 1</text>
+      <text x="1118" y="226" opacity="0.31">1 1 1 0 1 0</text>
+      <text x="1118" y="252" opacity="0.17">0 0 0 1 0 1</text>
+      <text x="1118" y="278" opacity="0.26">1 0 1 0 0 1</text>
+      <text x="1118" y="304" opacity="0.19">0 1 0 1 1 0</text>
+      <text x="1118" y="330" opacity="0.24">1 1 0 0 1 1</text>
+    </g>
+    
+
+    <!-- sand -->
+    <path d="M0 292 C 160 278, 300 300, 470 288 S 760 276, 980 292 S 1180 300, 1280 286 L1280 320 L0 320 Z" fill="#0e2a3a" opacity="0.9"/>
+    <path d="M0 304 C 200 296, 380 312, 600 302 S 1000 296, 1280 306 L1280 320 L0 320 Z" fill="#12364a" opacity="0.8"/>
+
+    <!-- plants -->
+    <g fill="none" stroke-linecap="round">
+      <path d="M70 310 C 60 250, 92 210, 78 150" stroke="#1f7a5a" stroke-width="7"/>
+      <path d="M92 312 C 104 262, 82 228, 100 182" stroke="#2a9a6e" stroke-width="6"/>
+      <path d="M52 312 C 40 270, 58 240, 44 204" stroke="#17654b" stroke-width="6"/>
+      <path d="M560 314 C 552 280, 574 258, 566 226" stroke="#1f7a5a" stroke-width="5"/>
+      <path d="M578 314 C 588 288, 572 270, 584 244" stroke="#2a9a6e" stroke-width="4"/>
+    </g>
+
+    <!-- bubbles -->
+    <g fill="none" stroke="#bdf3ff" stroke-width="2">
+      <circle cx="402" cy="96" r="9" opacity="0.75"/>
+      <circle cx="418" cy="62" r="6" opacity="0.6"/>
+      <circle cx="396" cy="34" r="4" opacity="0.5"/>
+      <circle cx="132" cy="70" r="5" opacity="0.4"/>
+      <circle cx="944" cy="250" r="5" opacity="0.4"/>
+      <circle cx="958" cy="222" r="3.5" opacity="0.35"/>
+    </g>
+
+    <!-- pufferfish -->
+    <g transform="translate(262 168)">
+      <!-- tail -->
+      <path d="M-118 -6 L-170 -46 Q-160 -6 -170 34 Z" fill="#e0a52a"/>
+      <path d="M-118 -6 L-158 -32 Q-151 -6 -158 20 Z" fill="#f6c344" opacity="0.8"/>
+      <!-- spikes -->
+      <g fill="#d99a1e">
+        <path d="M-6 -104 L6 -132 L18 -102 Z"/>
+        <path d="M44 -92 L66 -116 L68 -84 Z"/>
+        <path d="M82 -60 L112 -74 L100 -44 Z"/>
+        <path d="M-56 -92 L-56 -124 L-32 -100 Z"/>
+        <path d="M-94 -60 L-118 -82 L-86 -82 Z"/>
+        <path d="M100 -8 L132 -6 L104 14 Z"/>
+        <path d="M84 50 L110 70 L76 72 Z"/>
+        <path d="M40 88 L54 116 L22 100 Z"/>
+        <path d="M-12 100 L-8 130 L-34 104 Z"/>
+        <path d="M-62 84 L-82 108 L-80 76 Z"/>
+      </g>
+      <!-- body -->
+      <ellipse cx="0" cy="-2" rx="110" ry="102" fill="url(#body)"/>
+      <ellipse cx="6" cy="44" rx="78" ry="48" fill="url(#belly)" opacity="0.92"/>
+      <!-- spots -->
+      <g fill="#a86f10" opacity="0.55">
+        <circle cx="-40" cy="-58" r="7"/><circle cx="-6" cy="-72" r="5"/><circle cx="28" cy="-62" r="6"/>
+        <circle cx="-64" cy="-22" r="5"/><circle cx="-26" cy="-30" r="4"/>
+      </g>
+      <!-- fin -->
+      <path d="M-8 6 Q -40 34 -18 58 Q 4 40 -8 6 Z" fill="#e8ae2c" opacity="0.9"/>
+      <!-- eye -->
+      <circle cx="52" cy="-30" r="22" fill="#ffffff"/>
+      <circle cx="58" cy="-28" r="12" fill="#10202c"/>
+      <circle cx="62" cy="-33" r="4" fill="#ffffff"/>
+      <!-- mouth -->
+      <path d="M100 10 Q 110 16 100 22" stroke="#7a4d08" stroke-width="4" fill="none" stroke-linecap="round"/>
+    </g>
+
+    <!-- liveness LED -->
+    <circle cx="1236" cy="40" r="22" fill="url(#led)"/>
+    <circle cx="1236" cy="40" r="5" fill="#ffffff"/>
+
+    <!-- wordmark -->
+    <g font-family="Inter, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif">
+      <text x="470" y="150" font-size="76" font-weight="800" fill="#f4fbff" letter-spacing="-1.5">puffer-cipher</text>
+      <text x="474" y="196" font-size="26" font-weight="500" fill="#7fe8dc">Cryptographic randomness from living fish</text>
+      <text x="475" y="240" font-size="17" font-weight="500" fill="#9fb8c9" letter-spacing="0.4">computer vision  ·  sensor noise  ·  NIST SP 800-90B  ·  anti-replay LED</text>
+    </g>
+  </g>
+</svg>
