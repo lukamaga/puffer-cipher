@@ -371,7 +371,9 @@ Used only to compare "fish only / sensor only / combined" in reports.
 | GET | `/beacon/latest` | pulse JSON (404 if none) |
 | GET | `/beacon/pulses?start=0&limit=50` | `[pulse]` ascending index |
 | GET | `/beacon/pulse/{index}` | pulse JSON |
+| GET | `/entropy/history?seconds=300` | `[entropy message data]` ascending, from a server-side ring buffer (max 600 s) |
 
+`FishCard.stats.activity` and `chaos_score` are fractions in 0..1.
 `FishCard = {fish_id, name, color: "#rrggbb", present: bool, track_id, stats:
 {speed_avg, speed_max, activity, chaos_score, bits_total, bits_today,
 distance_px, seen_s}}`.
@@ -384,7 +386,7 @@ JSON text messages `{"type": <type>, "data": {...}}`:
 |---|---|---|
 | `hello` | on connect | `{version, source, width, height, fps, beacon_public_key}` |
 | `frame` | ~10 Hz | `{index, t, width, height, jpeg: <base64>, tracks: [{track_id, fish_id, name, color, bbox: [x1,y1,x2,y2], trail: [[x,y],...], speed, heading}]}` |
-| `entropy` | 2 Hz | `{t, mode, channels: {sensor|fish|system: {bits_per_s, h_per_sample, credited_total, health}}, pool: {sensor, fish}}` |
+| `entropy` | 2 Hz | `{t, mode, channels: {sensor|fish|system: {bits_per_s, h_per_sample, credited_total, health}}, pool: {sensor, fish, capacity_bits}}` (`h_per_sample` may be null for system) |
 | `bits` | 5 Hz | `{t, bits: "0101…"}` (256 display bits from a dedicated public `display` stream, never used as keys) |
 | `health` | 1 Hz | `{overall, channels: {name: {state, reasons, checks}}}` |
 | `led` | 2 Hz | `LivenessStatus` as JSON (`state` string, floats, `expected`, `observed`) |
@@ -499,6 +501,20 @@ the leaderboard by mean chaos score.
 | `info` | versions (libsodium, OpenCV), config, data dir |
 
 ## 10. Analysis report (`puffer.analysis.report`)
+
+```python
+@dataclass
+class ReportConfig:
+    sources: list[str]            # e.g. ["synthetic:seed=1,mode=day", "synthetic:seed=1,mode=night"]
+    frames: int = 3000            # per source
+    out_dir: Path = Path("docs/results")
+    media_dir: Path = Path("docs/media")
+    nist_sequences: int = 10      # 1e6-bit sequences per stream where available
+    dieharder: bool = False       # run dieharder on the final PufferRNG output
+    seed: int | None = None
+def run_report(config: ReportConfig, *, progress: Callable[[str], None] | None = None) -> Path  # path of RESULTS.md
+```
+
 
 Collects raw per-channel samples from a source (simulator day, simulator
 night, or a video file), runs the SP 800-90B assessment per channel, builds
