@@ -22,3 +22,4 @@ dashboard/dist/
 # media scratch
 *.mp4
 !docs/media/*.mp4
+.hypothesis/
