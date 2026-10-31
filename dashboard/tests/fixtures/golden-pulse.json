@@ -1,0 +1,20 @@
+{
+  "_provenance": "Computed with PyNaCl 1.6.2 (libsodium crypto_sign) and Python hashlib.blake2b, independently of the TypeScript code: M = b'PUFFER-BEACON-V1' + struct.pack('>QQI', index, timestamp_ms, period_ms) + local_random + precommitment + prev_output + summary_hash; signing seed = blake2b(b'puffer-dashboard-golden', digest_size=32); summary = json.dumps(obj, sort_keys=True, separators=(',', ':'), ensure_ascii=True).",
+  "secret_seed": "c77ac4cd54109def8da236d9c8cfe2c82f5225b5b774f3b926e677d733938df3",
+  "message": "5055464645522d424541434f4e2d56310000000000000007000001a1923047800000ea60be43fa0ea18ca9291d42bb140fd4a406fbf5d5da652a673927ddcca21f2291beee3bd897d21610f988f7db1c4cec4cd4af764a8ca2042d0ea393ee61a742c1eddf28c6bbc1e1920d747b4c6b83640daf5049a6bbdaa40cb4ac98a23cc72ebd9df7ad4e976ced71fdbbe395d813e34669b1be2d5485ad75e09cc81e85fa0a62d08314206e7eec2ca24e667cb0255c3abf5318961c1fb25ceb8673fcc9c31461ee3d3d36f7fef86f9da0d6ac53e03ba3863835826560fb4fafc8e952231d71fea9430eaec46dcf046585af7b0ff23d4c58eb00f0846315fe995e94473fed096e52",
+  "next_local_random": "832d9f6b8f51f263e618ebc118a3091b10c77bb0d573150b582cec1c885701ba060745b0a32336066d673de43672969a85e23d56cdd4942b52004d3efda0103a",
+  "pulse": {
+    "version": 1,
+    "index": 7,
+    "timestamp_ms": 1793454000000,
+    "period_ms": 60000,
+    "local_random": "be43fa0ea18ca9291d42bb140fd4a406fbf5d5da652a673927ddcca21f2291beee3bd897d21610f988f7db1c4cec4cd4af764a8ca2042d0ea393ee61a742c1ed",
+    "precommitment": "df28c6bbc1e1920d747b4c6b83640daf5049a6bbdaa40cb4ac98a23cc72ebd9df7ad4e976ced71fdbbe395d813e34669b1be2d5485ad75e09cc81e85fa0a62d0",
+    "prev_output": "8314206e7eec2ca24e667cb0255c3abf5318961c1fb25ceb8673fcc9c31461ee3d3d36f7fef86f9da0d6ac53e03ba3863835826560fb4fafc8e952231d71fea9",
+    "summary": "{\"fish_bits\":812,\"fish_count\":2,\"frames\":[1200,1290],\"health\":{\"fish\":\"ok\",\"sensor\":\"ok\"},\"liveness\":\"verified\",\"liveness_confidence_bits\":54,\"mode\":\"day\",\"sensor_bits\":4096,\"system_bits\":256,\"top_fish\":[{\"bits\":500,\"fish_id\":\"f3\",\"name\":\"Nemo\"}]}",
+    "summary_hash": "430eaec46dcf046585af7b0ff23d4c58eb00f0846315fe995e94473fed096e52",
+    "signature": "4ef4c9124654c5154ff2849e29b1690f14365ecb8fb5e5d36692ba4160dbda4b2987d6fe793921aae7cde480b07a25426560b7957e62c36fd4ebc1a63dfa7901",
+    "output": "c02432329d3dac71a2068372793420745940ff729099229226dd240309623ceaa22f0aacf3df942c81f11914c39c3b6a45cc7e0e3eece072d0a5cbddcc2724c0",
+    "public_key": "7c968e5ba61d370a4d87ec363b4f774ee69e92b21c87775d5809d5d6fc86fda3"
+  }
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Live dashboard for puffer-cipher: entropy from living fish, LED liveness, health tests and an in-browser verified randomness beacon."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title>puffer-cipher · live</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      // Apply a pinned theme before first paint (no flash of the wrong theme).
+      try {
+        const theme = localStorage.getItem('puffer-theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

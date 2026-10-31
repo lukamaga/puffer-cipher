@@ -1,0 +1,86 @@
+/*
+ * Design tokens: "deep-sea lab".
+ *
+ * Each token is declared once with light-dark(), which resolves against the
+ * element's color-scheme. The OS preference drives it by default; the theme
+ * toggle stamps data-theme on <html>, which pins color-scheme and so wins in
+ * both directions.
+ *
+ * Chart series colours are the validated reference palette (slots 1-3,
+ * blue/orange/aqua), checked with the dataviz validator against *these*
+ * surfaces in both modes (all-pairs: CVD dE >= 9.2, normal-vision dE >= 20.9).
+ * Light-mode aqua sits at 2.76:1 on the surface, so every chart ships visible
+ * value labels and a table view. Status colours are fixed, never themed, and
+ * always travel with an icon and a text label.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* planes */
+  --page: light-dark(#edf3f5, #050f16);
+  --surface: light-dark(#fcfdfd, #0c1c27);
+  --surface-2: light-dark(#f2f6f8, #102633);
+  --surface-3: light-dark(#e7eef1, #15303f);
+  --border: light-dark(rgb(10 26 36 / 0.09), rgb(150 215 235 / 0.1));
+  --border-strong: light-dark(rgb(10 26 36 / 0.16), rgb(150 215 235 / 0.18));
+  /* light-dark() takes colours only, so shadows are composed from colour tokens */
+  --shadow-near: light-dark(rgb(10 26 36 / 0.05), rgb(0 0 0 / 0.35));
+  --shadow-far: light-dark(rgb(10 26 36 / 0.1), rgb(0 0 0 / 0.55));
+  --highlight: light-dark(rgb(255 255 255 / 0.7), rgb(160 225 245 / 0.04));
+  --shadow: 0 1px 2px var(--shadow-near), 0 14px 34px -18px var(--shadow-far), inset 0 1px 0 var(--highlight);
+
+  /* ink */
+  --ink-1: light-dark(#0a1a24, #e6f0f3);
+  --ink-2: light-dark(#435561, #a7bac4);
+  --ink-3: light-dark(#5d7080, #7690a0);
+  --ink-on-accent: light-dark(#ffffff, #03222a);
+
+  /* chart chrome */
+  --grid: light-dark(#e3eaed, #173141);
+  --axis: light-dark(#c3cfd5, #284453);
+  --night-band: light-dark(rgb(30 60 90 / 0.06), rgb(120 160 255 / 0.06));
+
+  /* interactive accent (not a data colour) */
+  --accent: light-dark(#0b7285, #4fd1e0);
+  --accent-soft: light-dark(rgb(11 114 133 / 0.1), rgb(79 209 224 / 0.12));
+  --focus: light-dark(#0b7285, #7fe3ee);
+
+  /* data: channel identity (validated categorical slots 1-3) */
+  --series-sensor: light-dark(#2a78d6, #3987e5);
+  --series-fish: light-dark(#eb6834, #d95926);
+  --series-system: light-dark(#1baf7a, #199e70);
+  --series-muted: light-dark(#c9d3d8, #2a4352);
+
+  /* status (fixed) */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --neutral: light-dark(#7a8b95, #6f8794);
+
+  /* bit matrix + LED strips */
+  --bit-on: light-dark(#0b7285, #4fd1e0);
+  --bit-off: light-dark(#e3ebee, #12293a);
+  --led-on: light-dark(#0a1a24, #f2f8fa);
+  --led-off: light-dark(#e3ebee, #163040);
+
+  /* type */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+
+  /* shape + rhythm */
+  --radius-lg: 16px;
+  --radius-md: 10px;
+  --radius-sm: 6px;
+  --gap: 16px;
+  --pad: 18px;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
