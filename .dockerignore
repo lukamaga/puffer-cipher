@@ -1,0 +1,11 @@
+.git
+.venv
+**/__pycache__
+**/node_modules
+dashboard/dist
+data
+results/raw
+*.mp4
+.pytest_cache
+.mypy_cache
+.ruff_cache

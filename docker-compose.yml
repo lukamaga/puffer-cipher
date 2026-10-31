@@ -1,0 +1,32 @@
+# Laptop / CI demo: simulated aquarium.
+#   docker compose up --build
+# Raspberry Pi with a real camera and LED on GPIO17:
+#   docker compose --profile pi up --build puffer-pi
+services:
+  puffer:
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      PUFFER_SOURCE: synthetic
+    volumes:
+      - puffer-data:/data
+    restart: unless-stopped
+
+  puffer-pi:
+    profiles: ["pi"]
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      PUFFER_SOURCE: "camera:0"
+      PUFFER_LED: "gpio:17"
+      PUFFER_LIVENESS: required
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/gpiochip0:/dev/gpiochip0
+    group_add: ["video", "dialout"]
+    volumes:
+      - puffer-data:/data
+    restart: unless-stopped
+
+volumes:
+  puffer-data:

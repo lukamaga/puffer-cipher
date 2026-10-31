@@ -362,3 +362,107 @@ JSON text messages `{"type": <type>, "data": {...}}`:
   reference p-values (Appendix B).
 * SP 800-90B: estimators on distributions with known min-entropy.
 * Beacon: cross-language vectors shared with the dashboard.
+
+## 9. Engine, configuration and runtime (phase 2)
+
+### 9.1 `puffer.config.PufferConfig`
+
+A dataclass loaded from an optional TOML file (`[puffer]` table) and
+overridden by `PUFFER_<FIELD>` environment variables:
+
+| field | default | meaning |
+|---|---|---|
+| `source` | `"synthetic"` | source spec (`puffer.sources.spec.open_source`) |
+| `detector` | `"motion"` | `"motion"` or `"yolo:<weights.pt>"` |
+| `liveness` | `"auto"` | `required` / `advisory` / `off` / `auto` (required for camera and synthetic, off for video files) |
+| `led` | `"auto"` | `none`, `simulated`, `gpio:<pin>`; auto = simulated for synthetic, gpio:17 for camera on a Pi, none otherwise |
+| `led_roi` | `None` | `(x, y, w, h)` or auto-calibration |
+| `symbol_s`, `liveness_window_bits` | `0.2`, `64` | LED challenge timing |
+| `sensor_sites` | `4096` | sensor sample sites |
+| `safety_factor` | `0.5` | credit multiplier |
+| `pool_capacity_bits` | `4096` | per-channel credit cap |
+| `sensor_h_assessed`, `fish_h_assessed` | `2.0`, `2.0` | H used by RCT/APT cutoffs |
+| `min_fish` | `1` | fish presence check |
+| `beacon_enabled`, `beacon_period_s` | `True`, `60` | public beacon |
+| `data_dir` | `./data` | SQLite DB (`puffer.db`), beacon signing key (`beacon.key`), re-ID gallery |
+| `fish_names` | `{}` | fish_id -> display name overrides |
+| `stream_fps`, `stream_width`, `jpeg_quality` | `10`, `640`, `70` | dashboard video stream |
+| `host`, `port` | `127.0.0.1`, `8000` | API server |
+| `static_dir` | `dashboard/dist` | built dashboard served at `/` when the directory exists |
+
+### 9.2 `puffer.engine.EntropyEngine`
+
+```python
+@dataclass(frozen=True)
+class ChannelStats:
+    name: str
+    bits_per_s: float          # credited bits per second (EMA)
+    h_per_sample: float        # rolling min-entropy estimate
+    credited_total: float      # since start
+    health: HealthState
+
+@dataclass(frozen=True)
+class EngineSnapshot:
+    frame_index: int; t: float; wall_time: float; fps: float
+    mode: LightMode; width: int; height: int
+    tracks: tuple[TrackSnapshot, ...]
+    channels: dict[str, ChannelStats]      # sensor, fish, system
+    pool: dict[str, float]                 # current credit per camera channel
+    health: dict[str, HealthReport]; overall: HealthState
+    liveness: LivenessStatus
+
+class EntropyEngine:
+    config: PufferConfig
+    rng: PufferRNG                         # the ONLY way to get secret bytes
+    def step(self) -> EngineSnapshot | None          # one frame; None when the source ends
+    def collect(self, min_credit_bits: float, *, timeout_s: float, max_frames: int | None = None) -> bool
+    def start(self) -> None                          # background thread (real-time sources)
+    def stop(self) -> None
+    def snapshot(self) -> EngineSnapshot | None
+    def latest_frame(self) -> Frame | None
+    def jpeg(self, *, max_width: int = 640, quality: int = 70) -> bytes | None
+    def subscribe(self, callback: Callable[[EngineSnapshot], None]) -> Callable[[], None]
+    def fish_cards(self) -> list[dict]               # DESIGN 7.1 FishCard
+    def leaderboard(self, days: int = 7) -> list[dict]
+    def receipt_context(self) -> ReceiptContext
+    def close(self) -> None
+```
+
+Per frame (`step`): read frame → health.observe_frame → liveness.process →
+tracker.process → sensor/fish channels → health samples + rolling estimate →
+if usable: `pool.absorb(output, credit)` (else skipped) → fish stats →
+snapshot → subscribers. Sensor sample sites exclude the LED region (the LED
+pattern is our own challenge, not entropy). `rng.generate()` may be called
+from any thread.
+
+`puffer.runtime.build_engine(config, *, source=None) -> EntropyEngine` and
+`build_beacon(config, engine) -> BeaconService` wire concrete components.
+`puffer.fishstats.FishStats` persists per-fish daily aggregates (credited
+bits, seconds seen, distance, chaos score) in `data_dir/puffer.db` and ranks
+the leaderboard by mean chaos score.
+
+### 9.3 CLI (`puffer`)
+
+| command | behaviour |
+|---|---|
+| `keygen [-o fish.key] [--source] [--min-bits 256] [--timeout 60] [--json]` | collect camera entropy, write a key file, print the fish attribution |
+| `encrypt FILE [-o OUT] [-k KEY \| --password] [--force]` | no key/password: make a fresh fish key and save it to `OUT.key` |
+| `decrypt FILE [-o OUT] [-k KEY \| --password] [--force]` | default OUT strips `.puf` |
+| `random [-n 32] [--format hex\|base64\|raw] [--stream]` | `--stream` writes raw bytes forever (for `dieharder -g 200`) |
+| `simulate [-o demo.mp4] [--seconds 20] [--fish 6] [--mode] [--seed]` | render the aquarium simulator to a video |
+| `serve [--config] [--source] [--host] [--port]` | engine + beacon + API + dashboard |
+| `beacon verify FILE_OR_URL [--public-key]`, `beacon latest --url` | verify a chain offline |
+| `analyze [--source] [--frames] [--out]` | statistics report (section 10) |
+| `fish [--days 7]` | leaderboard |
+| `info` | versions (libsodium, OpenCV), config, data dir |
+
+## 10. Analysis report (`puffer.analysis.report`)
+
+Collects raw per-channel samples from a source (simulator day, simulator
+night, or a video file), runs the SP 800-90B assessment per channel, builds
+conditioned streams *sensor only*, *fish only*, *combined* (no OS randomness)
+and the final PufferRNG output (with OS randomness), runs SP 800-22
+(multi-sequence proportion + uniformity), the `ent` equivalent, and dieharder
+when installed (`puffer random --stream | dieharder -g 200`), and writes
+`docs/results/RESULTS.md` + PNG plots to `docs/media/`. Every table states
+the data source.
