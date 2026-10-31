@@ -238,7 +238,7 @@ samples must pass before credit begins (`STARTUP`). Domain checks:
 
 | check | channel | rule (defaults) |
 |---|---|---|
-| `frozen_frame` | sensor (and fish) | identical frame hash, or mean abs diff < 0.05 for 15 consecutive frames ⇒ FAILED |
+| `frozen_frame` | sensor (and fish) | frame bit-identical to any of the last 2048 frames (catches looped video), or mean abs diff < 0.05, for 15 consecutive frames ⇒ FAILED |
 | `fish_presence` | fish | fewer than `min_fish` (1) confirmed tracks for 10 s ⇒ FAILED; fewer than expected ⇒ DEGRADED |
 | `low_entropy` | each | rolling quick estimate below `min_bits_per_sample` (0.5) ⇒ FAILED |
 | `source_timeout` | all camera | no frame for 5 s ⇒ FAILED |
@@ -251,8 +251,9 @@ requires a cooldown (5 s) and a fresh start-up window.
 
 `credit_bits = n_samples * min(H_est, H_cap) * safety_factor`
 
-`H_est` is the rolling quick min-entropy estimate (MCV-based over the last
-4096 samples, refreshed every 30 frames), `H_cap` caps per-sample credit
+`H_est` is the rolling min-entropy estimate, `min(MCV, Lag prediction,
+MultiMMC prediction)` over the last 4096 samples, refreshed every 30 frames
+(the predictors catch periodic or repeated data that MCV alone overrates), `H_cap` caps per-sample credit
 (sensor 4.0, fish 3.0), `safety_factor = 0.5`. DEGRADED halves credit again.
 Fish credit is split between fish proportionally to their sample counts.
 
@@ -272,7 +273,12 @@ Fish credit is split between fish proportionally to their sample counts.
   `seed = BLAKE2b-256(key=os.urandom(32), person=b"puffer-seed-v1",
   data = u32(len(purpose)) || purpose || u64(counter) || draw.material)`;
   `out = nacl.utils.randombytes_deterministic(n, seed)`.
-  `generate_key()` = `generate(32, "key")`, `nonce()` = `generate(24, "nonce")`.
+  `generate_key()` = `generate(32, "key")`.
+* Public values (`nonce()`, `salt()`) use `generate(n, purpose, consume=False)`:
+  `seed = BLAKE2b-256(key=os.urandom(32), person=b"puffer-public-v1", data =
+  u32(len(purpose)) || purpose || u64(counter) || pool.snapshot_digest())`. They
+  mix the current pool but consume no camera credit, so a nonce never starves the
+  key generated next to it.
   Requests are expanded in 1 MiB chunks, one counter per chunk.
 * Credit is a ledger of estimated *input* min-entropy, not output strength:
   every seed is 256 bits regardless of how much credit a draw consumed.

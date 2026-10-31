@@ -190,8 +190,10 @@ def check_canonical_summary(summary: str) -> None:
         raise BeaconFormatError("summary must be a str")
     try:
         parsed = json.loads(summary)
-    except json.JSONDecodeError as exc:
-        raise BeaconFormatError(f"summary is not valid JSON: {exc}") from exc
+    except (ValueError, RecursionError) as exc:
+        # ValueError covers JSONDecodeError and the int digit limit;
+        # RecursionError a hostile nesting depth. All are format errors.
+        raise BeaconFormatError(f"summary is not valid JSON: {exc!s:.200}") from exc
     if canonical_summary(parsed) != summary:
         raise BeaconFormatError("summary string is not in canonical form")
 

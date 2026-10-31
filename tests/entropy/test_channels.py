@@ -217,3 +217,25 @@ def test_compute_credit():
         compute_credit(10, float("nan"), 3.0)
     with pytest.raises(ValueError, match="non-negative"):
         compute_credit(-1, 2.0, 3.0)
+
+
+def test_rolling_estimate_sees_through_a_deterministic_cycle():
+    """MCV alone credits 0,1,2,0,1,2,... with ~1.5 bits/sample; predictors see 0."""
+    from puffer.entropy.channels import RollingEstimate
+    from puffer.entropy.estimators import most_common_value
+
+    cycle = (np.arange(4096) % 3).astype(np.uint8)
+    assert most_common_value(cycle).min_entropy > 1.4
+    est = RollingEstimate(h_cap=3.0)
+    assert est.feed(cycle)
+    assert est.h_est < 0.05
+    assert est.credit(4096) < 1.0
+
+
+def test_rolling_estimate_keeps_credit_for_noise(rng):
+    from puffer.entropy.channels import RollingEstimate
+
+    noise = (np.round(rng.normal(0, 2.8, 4096)).astype(np.int64) % 256).astype(np.uint8)
+    est = RollingEstimate(h_cap=4.0)
+    assert est.feed(noise)
+    assert 2.3 < est.h_est < 3.3

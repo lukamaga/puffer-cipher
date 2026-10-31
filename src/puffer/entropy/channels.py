@@ -50,7 +50,12 @@ from typing import ClassVar
 import numpy as np
 import numpy.typing as npt
 
-from puffer.entropy.estimators import most_common_value
+from puffer.entropy.estimators import (
+    InsufficientDataError,
+    lag,
+    most_common_value,
+    multi_mmc,
+)
 from puffer.types import (
     CHANNEL_FISH,
     CHANNEL_SENSOR,
@@ -239,16 +244,38 @@ def compute_credit(
     return n_samples * min(max(h_est, 0.0), h_cap) * safety_factor * multiplier
 
 
+def _min_entropy_estimate(window: npt.NDArray[np.uint8]) -> float:
+    """min(MCV, Lag, MultiMMC) over ``window``; see :class:`RollingEstimate`."""
+    estimates = [most_common_value(window).min_entropy]
+    for estimator in (lag, multi_mmc):
+        try:
+            estimates.append(estimator(window).min_entropy)
+        except InsufficientDataError:
+            continue  # too few samples for this predictor: MCV still bounds it
+    return min(estimates)
+
+
 class RollingEstimate:
     """Quick per-sample min-entropy estimate over the last ``window`` samples.
 
-    The SP 800-90B Most Common Value estimator is cheap, works for any
-    symbol distribution and is conservative (a 99% upper bound on the most
-    likely symbol's probability). It is refreshed every ``refresh_every``
-    :meth:`feed` calls (one call per frame) rather than per frame to keep the
-    per-frame cost flat. Until ``min_samples`` samples exist ``h_est`` is 0:
-    the bound is valid for small samples, but so loose that it would trip
-    the low-entropy check during start-up for no reason.
+    The estimate is the minimum of three SP 800-90B estimators:
+
+    * Most Common Value (6.3.1) bounds the probability of the likeliest
+      symbol. It is cheap but blind to *order*: a deterministic cycle
+      ``0,1,2,0,1,2,...`` looks like 1.5 bits per sample to it.
+    * Lag prediction (6.3.8) and MultiMMC prediction (6.3.9) try to *predict*
+      the next sample from the recent past. Periodic, repeated or
+      Markov-dependent data is predictable, so they drive the estimate to
+      ~0 bits for exactly the sources MCV overrates (a stuck cycle, a looped
+      pattern, a decoy track replaying the same motion).
+
+    Taking the minimum keeps credit honest: a channel is credited only for
+    what neither its symbol frequencies nor its sequence structure explain.
+    The estimate is refreshed every ``refresh_every`` :meth:`feed` calls (one
+    call per frame), costing ~25 ms per refresh for a 4096-sample window, so
+    the per-frame cost stays well under a millisecond. Until ``min_samples``
+    samples exist ``h_est`` is 0: the bounds are valid for small samples but
+    so loose that they would trip the low-entropy check during start-up.
     """
 
     def __init__(
@@ -281,7 +308,7 @@ class RollingEstimate:
 
     @property
     def h_est(self) -> float:
-        """Latest MCV estimate in bits per sample (uncapped; 0.0 until ready)."""
+        """Latest estimate in bits per sample (uncapped; 0.0 until ready)."""
         return self._h if self._h is not None else 0.0
 
     def feed(self, samples: npt.NDArray[np.uint8]) -> bool:
@@ -304,7 +331,7 @@ class RollingEstimate:
         due = self._h is None or self._since_refresh >= self.refresh_every
         if not due or self._count < self.min_samples:
             return False
-        self._h = most_common_value(self._buf[: self._count]).min_entropy
+        self._h = _min_entropy_estimate(self._buf[: self._count])
         self._since_refresh = 0
         return True
 
