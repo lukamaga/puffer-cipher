@@ -105,12 +105,12 @@ def test_truncated_but_long_enough_fails_authentication(key: bytes) -> None:
 
 
 def test_b64_round_trip(key: bytes) -> None:
-    token = encrypt_message_b64("рыба 🐡".encode(), key)
+    token = encrypt_message_b64("café puffer \U0001f421".encode(), key)
     assert "=" not in token
-    assert len(b64url_decode(token)) == NONCE_BYTES + len("рыба 🐡".encode()) + TAG
-    assert decrypt_message_b64(token, key).decode() == "рыба 🐡"
+    assert len(b64url_decode(token)) == NONCE_BYTES + len("café puffer \U0001f421".encode()) + TAG
+    assert decrypt_message_b64(token, key).decode() == "café puffer \U0001f421"
     padded = token + "=" * (-len(token) % 4)
-    assert decrypt_message_b64(padded, key).decode() == "рыба 🐡"
+    assert decrypt_message_b64(padded, key).decode() == "café puffer \U0001f421"
 
 
 def test_b64_explicit_nonce_is_deterministic(key: bytes) -> None:

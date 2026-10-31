@@ -81,7 +81,7 @@ def test_valid_chain_verifies(document: dict[str, Any]) -> None:
 def test_valid_chain_exercises_non_ascii_summary_escapes(document: dict[str, Any]) -> None:
     summaries = [item["summary"] for item in document["valid_chain"]]
     assert all(summary.isascii() for summary in summaries)
-    assert any("\\u0414" in summary for summary in summaries)
+    assert any("\\u00eb" in summary for summary in summaries)
 
 
 def test_every_error_code_has_a_vector(document: dict[str, Any]) -> None:

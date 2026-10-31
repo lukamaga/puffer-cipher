@@ -84,3 +84,13 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -t puffer-cipher:ci .
+      - name: Smoke test
+        run: docker run --rm puffer-cipher:ci puffer info

@@ -60,7 +60,7 @@ VECTOR_CHAIN_LENGTH: Final = 5
 DEFAULT_OUT: Final = Path("tests/vectors/beacon_vectors.json")
 
 _LOCAL_RANDOM_PERSON: Final = b"puffer-vector-lr"  # 16 bytes, BLAKE2b's maximum
-_FISH: Final = (("f1", "Nemo"), ("f2", "Dory"), ("f3", "Дори"), ("f4", "Puffy"))
+_FISH: Final = (("f1", "Nemo"), ("f2", "Dory"), ("f3", "Zoë"), ("f4", "Puffy"))
 _TARGET: Final = 2  # invalid vectors tamper with pulse 2 and use pulse 1 as prev
 
 

@@ -328,10 +328,10 @@ def test_direct_construction_validates_format(signing_key: SigningKey) -> None:
 
 
 def test_canonical_summary_is_sorted_compact_ascii() -> None:
-    obj = {"b": [1, True, "x"], "a": {"z": 0, "é": "Дори"}, "c": False}
+    obj = {"b": [1, True, "x"], "a": {"z": 0, "é": "Zoë"}, "c": False}
     text = canonical_summary(obj)
     assert text == json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    assert text.startswith('{"a":{"z":0,"\\u00e9":"\\u0414')
+    assert text.startswith('{"a":{"z":0,"\\u00e9":"Zo\\u00eb')
     assert text.isascii()
 
 

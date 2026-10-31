@@ -597,7 +597,7 @@ def test_empty_password_is_refused(fast_kdf: dict[str, Any]) -> None:
 
 
 def test_passwords_are_nfc_normalised(fast_kdf: dict[str, Any], plaintext: bytes) -> None:
-    composed = unicodedata.normalize("NFC", "pässwörd-рыба")
+    composed = unicodedata.normalize("NFC", "pässwörd-naïve")
     decomposed = unicodedata.normalize("NFD", composed)
     assert composed != decomposed
     blob = seal(plaintext, password=composed, **fast_kdf)
