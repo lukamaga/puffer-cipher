@@ -206,7 +206,7 @@ class FishChannel:
         ).reshape(-1, _FISH_FIELDS)
         absorb = rows.astype(">f8").tobytes()
         innovation = rows[:, 8:10]
-        finite = np.isfinite(innovation).all(axis=1)
+        finite = np.isfinite(innovation[:, 0]) & np.isfinite(innovation[:, 1])
         # np.rint rounds half to even like round(); np.mod on floats keeps the
         # low 4 bits of the (two's-complement) integer without int overflow.
         q = np.mod(np.rint(innovation[finite] * _FISH_QUANT), 16).astype(np.uint8)

@@ -353,7 +353,7 @@ class FrozenFrameCheck:
         image = np.ascontiguousarray(frame.image)
         h = hashlib.blake2b(digest_size=16, person=b"puffer-frozen")
         h.update(repr(image.shape).encode("ascii"))
-        h.update(image)
+        h.update(image.data)
         digest = h.digest()
         small = image[::2, ::2]
         prev = self._prev_small
