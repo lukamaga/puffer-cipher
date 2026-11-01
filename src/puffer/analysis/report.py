@@ -1728,12 +1728,17 @@ def _table(head: Sequence[str], rows: Iterable[Sequence[str]], align: str = "") 
 
 
 def _picture(name: str, alt: str, media_rel: Path) -> str:
+    """A chart as a plain ``<img>`` (dark theme) plus a link to the light version.
+
+    A ``<picture>`` element with a ``prefers-color-scheme`` source would pick
+    the theme automatically on github.com, but the GitHub mobile app does not
+    render ``<picture>`` at all. A plain image shows everywhere; the dark
+    variant reads well on light and dark pages alike.
+    """
     base = media_rel.as_posix().rstrip("/")
     return (
-        "<picture>\n"
-        f'  <source media="(prefers-color-scheme: dark)" srcset="{base}/{name}-dark.png">\n'
-        f'  <img alt="{alt}" src="{base}/{name}-light.png" width="100%">\n'
-        "</picture>"
+        f'<img alt="{alt}" src="{base}/{name}-dark.png" width="100%">\n\n'
+        f"<sub>Light version: [{name}-light.png]({base}/{name}-light.png)</sub>"
     )
 
 
@@ -1817,7 +1822,7 @@ def _md_header(results: Mapping[str, Any]) -> str:
         f"`puffer analyze` (`puffer.analysis.report`) on {date} from code {code}. "
         "Every figure is also in [`results.json`](results.json).",
         "",
-        "> [!IMPORTANT]",
+        "> **Important.**",
     ]
     runs = list(results["runs"].values())
     src = _first_synthetic(results)

@@ -2,7 +2,7 @@
 
 Statistical analysis of the puffer-cipher entropy channels, produced by `puffer analyze` (`puffer.analysis.report`) on 2026-10-31 from code `667ba61`. Every figure is also in [`results.json`](results.json).
 
-> [!IMPORTANT]
+> **Important.**
 > **All data in this report comes from the simulated aquarium** (`SyntheticAquarium`, seed 1, 640x480 pixels, 30 fps, 6 fish). No real fish and no real camera were involved.
 > The simulator draws its sensor noise and fish behaviour from a seeded pseudo-random generator, so to anyone who knows the seed its samples carry no entropy at all. The estimates below show how unpredictable the samples look to the SP 800-90B estimators, which is what the same code would measure on a real camera. They are not evidence that this run produced secret bits.
 
@@ -68,10 +68,9 @@ Data: day (simulated aquarium, seed 1, 640x480, 30 fps, 6 fish, 9,000 frames); n
 
 Sample counts, stated plainly: the sensor channel yields 4,096 samples per frame, so the full 1,000,000 samples come from about 245 consecutive frames. The fish channel yields one sample per confirmed fish per frame; the counts above are everything the runs produced, a small fraction of what the standard asks for, so the fish estimates carry wide confidence bounds (all estimators use 99 % upper bounds, which makes them lower, not higher, on short data).
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../media/min-entropy-dark.png">
-  <img alt="SP 800-90B min-entropy per sample by estimator, sensor and fish, day and night" src="../media/min-entropy-light.png" width="100%">
-</picture>
+<img alt="SP 800-90B min-entropy per sample by estimator, sensor and fish, day and night" src="../media/min-entropy-dark.png" width="100%">
+
+<sub>Light version: [min-entropy-light.png](../media/min-entropy-light.png)</sub>
 
 **Credit versus assessment.** The engine credits `n * min(H_est, cap) * safety_factor`, where `H_est` is a quick rolling estimate (minimum of MCV, Lag and MultiMMC on the last 4,096 samples, original track only). The table compares the credit per sample the engine actually gave with the full assessment above.
 
@@ -116,10 +115,9 @@ The simulator in `mode=cycle`: 40 s of day (the last 8 s dim like dusk), 120 s o
 
 Fish credit falls from 190.5 bit/s by day to 58.2 bit/s in the second half of the night, as the sleeping fish move less and fewer of them stay tracked (5.4 confirmed tracks per frame by day, 1.4 in the second half of the night); the drop is gradual because the fish settle over tens of seconds. The sensor channel earns 102,374 bit/s by day and 142,236 bit/s at night: its credit rises with the IR mode's higher read noise. The two channels do not interact; each is credited from its own samples. For one second after each switch the fish channel credits nothing: the motion detector rebuilds its background model when the image changes between colour and IR. All of this describes the simulator's camera and fish models; a real NoIR camera and real fish need their own measurement.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../media/day-night-cycle-dark.png">
-  <img alt="Credited bits per second over a day, night, day cycle" src="../media/day-night-cycle-light.png" width="100%">
-</picture>
+<img alt="Credited bits per second over a day, night, day cycle" src="../media/day-night-cycle-dark.png" width="100%">
+
+<sub>Light version: [day-night-cycle-light.png](../media/day-night-cycle-light.png)</sub>
 
 ## 4. Conditioned streams and PufferRNG output (SP 800-22)
 
@@ -158,15 +156,13 @@ Lowest pass proportion over each test's sub-tests (148 templates, 8 + 18 excursi
 | Linear complexity | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
 | band lower edge at 10, 100 sequences | 0.896 | 0.896 | 0.896 | 0.896 | 0.960 |
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../media/sp800-22-proportions-dark.png">
-  <img alt="SP 800-22 pass proportions per test for conditioned streams and PufferRNG output" src="../media/sp800-22-proportions-light.png" width="100%">
-</picture>
+<img alt="SP 800-22 pass proportions per test for conditioned streams and PufferRNG output" src="../media/sp800-22-proportions-dark.png" width="100%">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../media/sp800-22-pvalues-dark.png">
-  <img alt="Histogram of SP 800-22 p-values of PufferRNG output" src="../media/sp800-22-pvalues-light.png" width="100%">
-</picture>
+<sub>Light version: [sp800-22-proportions-light.png](../media/sp800-22-proportions-light.png)</sub>
+
+<img alt="Histogram of SP 800-22 p-values of PufferRNG output" src="../media/sp800-22-pvalues-dark.png" width="100%">
+
+<sub>Light version: [sp800-22-pvalues-light.png](../media/sp800-22-pvalues-light.png)</sub>
 
 **Fish only, day: 35,840 bits, shorter than one 1,000,000-bit sequence.** Only the tests whose recommended input size fits ran, once each:
 
@@ -235,10 +231,9 @@ Cross-check with the real `ent` binary on two of the streams:
 | day/sensor (raw) | 4.513508 | 508,919,892.38 | < 0.01 % |
 | day/pufferrng | 7.999985 | 252.29 | 53.61 % |
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../media/ent-raw-vs-conditioned-dark.png">
-  <img alt="ent entropy per byte of raw samples versus hashed streams, with SP 800-90B min-entropy" src="../media/ent-raw-vs-conditioned-light.png" width="100%">
-</picture>
+<img alt="ent entropy per byte of raw samples versus hashed streams, with SP 800-90B min-entropy" src="../media/ent-raw-vs-conditioned-dark.png" width="100%">
+
+<sub>Light version: [ent-raw-vs-conditioned-light.png](../media/ent-raw-vs-conditioned-light.png)</sub>
 
 ## 6. Liveness: live tank versus replay
 
@@ -252,10 +247,9 @@ Data: simulated aquarium, seed 1, 640x480, 30 fps, 6 fish, 1,200 frames. The sim
 
 `confidence_bits = -log2(P[Binomial(n, 1/2) >= matches] x n_lags)` over the last 64 bits; VERIFIED needs at least 24 bits and a match ratio of at least 0.9. The live run can verify no earlier than one full window (12.8 s) after the start, and its first camera credit follows the 5 s health cooldown. The replay's best judged window matched 58 % of the bits (bits the LED detector cannot decode count as misses), well short of the 90 % needed: a recording made before the challenge existed cannot contain it. The control passing shows that the replay fails because the challenge is fresh, not because of the codec or the detector.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../media/liveness-replay-dark.png">
-  <img alt="Liveness confidence over time: the live tank verifies, its replay never does" src="../media/liveness-replay-light.png" width="100%">
-</picture>
+<img alt="Liveness confidence over time: the live tank verifies, its replay never does" src="../media/liveness-replay-dark.png" width="100%">
+
+<sub>Light version: [liveness-replay-light.png](../media/liveness-replay-light.png)</sub>
 
 ## 7. Fish tracking quality
 

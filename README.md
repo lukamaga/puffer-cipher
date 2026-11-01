@@ -3,7 +3,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lukamaga/puffer-cipher/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/lukamaga/puffer-cipher/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python 3.11 to 3.13" src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white">
   <img alt="Tests" src="https://img.shields.io/badge/tests-1%2C800%2B%20passing-2EA44F">
   <img alt="Typed with mypy" src="https://img.shields.io/badge/types-mypy-2A6DB2">
@@ -60,8 +59,7 @@ wall of lava lamps does not have: a challenge-response LED that proves the
 video is live, entropy accounting per channel and per fish, and a public
 randomness beacon that anyone can verify in a browser.
 
-> [!NOTE]
-> The animation above, the screenshots and every number in this README come
+> **Note.** The animation above, the screenshots and every number in this README come
 > from the built-in aquarium simulator. The code paths for a Raspberry Pi
 > camera and a GPIO-driven LED are part of the project and described in
 > [docs/hardware.md](docs/hardware.md).
@@ -244,10 +242,7 @@ Each channel's raw samples were assessed with all ten estimators of NIST SP
 800-90B section 6.3. The engine credits at most half of the assessed
 min-entropy, and never more than 3 bits per fish sample.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/media/min-entropy-dark.png">
-  <img alt="SP 800-90B min-entropy per sample by estimator, sensor and fish, day and night" src="docs/media/min-entropy-light.png" width="100%">
-</picture>
+<img alt="SP 800-90B min-entropy per sample by estimator, sensor and fish, day and night" src="docs/media/min-entropy-dark.png" width="100%">
 
 | | Sensor, day | Sensor, night | Fish, day | Fish, night |
 |---|---:|---:|---:|---:|
@@ -268,10 +263,7 @@ fewer of them stay tracked, and their credit falls from 190 bit/s by day to
 because the infrared mode runs at a higher gain. Credit always follows the
 measurement, so the balance between channels adapts without configuration.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/media/day-night-cycle-dark.png">
-  <img alt="Credited bits per second over a day, night, day cycle" src="docs/media/day-night-cycle-light.png" width="100%">
-</picture>
+<img alt="Credited bits per second over a day, night, day cycle" src="docs/media/day-night-cycle-dark.png" width="100%">
 
 ### Live tank versus replay
 
@@ -288,10 +280,7 @@ an attacker could ask for.
 The control proves the replay fails because the challenge is fresh, not
 because of the codec or the detector.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/media/liveness-replay-dark.png">
-  <img alt="Liveness confidence over time: the live tank verifies, its replay never does" src="docs/media/liveness-replay-light.png" width="100%">
-</picture>
+<img alt="Liveness confidence over time: the live tank verifies, its replay never does" src="docs/media/liveness-replay-dark.png" width="100%">
 
 ### Statistical test suites
 
@@ -316,20 +305,11 @@ raw samples.
 <summary><b>More charts: SP 800-22 pass proportions, p-value uniformity, ent</b></summary>
 <br>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/media/sp800-22-proportions-dark.png">
-  <img alt="SP 800-22 pass proportions per test for conditioned streams and PufferRNG output" src="docs/media/sp800-22-proportions-light.png" width="100%">
-</picture>
+<img alt="SP 800-22 pass proportions per test for conditioned streams and PufferRNG output" src="docs/media/sp800-22-proportions-dark.png" width="100%">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/media/sp800-22-pvalues-dark.png">
-  <img alt="Histogram of SP 800-22 p-values of PufferRNG output" src="docs/media/sp800-22-pvalues-light.png" width="100%">
-</picture>
+<img alt="Histogram of SP 800-22 p-values of PufferRNG output" src="docs/media/sp800-22-pvalues-dark.png" width="100%">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/media/ent-raw-vs-conditioned-dark.png">
-  <img alt="ent entropy per byte of raw samples versus hashed streams, with SP 800-90B min-entropy" src="docs/media/ent-raw-vs-conditioned-light.png" width="100%">
-</picture>
+<img alt="ent entropy per byte of raw samples versus hashed streams, with SP 800-90B min-entropy" src="docs/media/ent-raw-vs-conditioned-dark.png" width="100%">
 
 </details>
 
@@ -455,8 +435,7 @@ verifiers agree byte for byte.
   <img src="docs/media/dashboard-beacon.png" alt="Beacon feed with per-pulse signature, output, summary, chain and precommitment checks" width="62%">
 </p>
 
-> [!IMPORTANT]
-> Beacon values are public. Never use them as keys.
+> **Important.** Beacon values are public. Never use them as keys.
 
 ## API
 
@@ -532,11 +511,13 @@ The test suite covers more than the happy path:
 
 ## Roadmap
 
-- [ ] Run the reference rig on a real aquarium and publish its measurements next to the simulator's
-- [ ] A per-fish YOLO model trained on footage of the real tank
-- [ ] A full SP 800-90B assessment with one million samples per channel and NIST's reference tool
-- [ ] Optional mixing of the beacon with drand for externally verifiable public randomness
-- [ ] An independent security review
+| next step | what it adds |
+|---|---|
+| **Real aquarium** | Measurements from the reference rig published next to the simulator's numbers |
+| **Per-fish YOLO model** | Identity straight from the detector, robust to overlapping fish and infrared |
+| **Full fish-channel assessment** | One million samples per channel, cross-checked with NIST's reference tool |
+| **drand mixing** | Public randomness that does not depend on a single beacon operator |
+| **Security review** | An outside look at the formats, the generator and the liveness protocol |
 
 ## License
 
